@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db, racecardsTable, runnersTable } from "@workspace/db";
 import { UploadRacesBody, UploadResultsBody } from "@workspace/api-zod";
 
@@ -60,16 +60,62 @@ function isNonRunnerFormat(rows: Record<string, unknown>[]): boolean {
   return hasHorse && hasVenue && hasTime && !hasDate;
 }
 
-/** Normalise a time string.
- *  - HH:MM:SS → HH:MM  (strip seconds — 3-part)
- *  - HH:MM    → HH:MM  (already correct)
- *  - HH       → HH:00  (bare hour — pad minutes)
+/** Normalise a time string to HH:MM (24-hour, zero-padded).
+ *
+ * Handles the full range of formats that appear when spreadsheets
+ * are exported from Excel, Google Sheets, or typed manually:
+ *
+ *   "19:22"          → "19:22"   (24h HH:MM — passthrough)
+ *   "19:22:30"       → "19:22"   (24h HH:MM:SS — strip seconds)
+ *   "7:22 PM"        → "19:22"   (12h with minutes)
+ *   "7 PM"           → "19:00"   (12h bare hour)
+ *   "7:22:30 PM"     → "19:22"   (12h with seconds)
+ *   0.80694...       → "19:22"   (Excel serial fraction of a day)
+ *   "19"             → "19:00"   (bare integer hour)
  */
-function normaliseTime(t: string): string {
-  const parts = t.trim().split(":");
-  if (parts.length >= 3) return `${parts[0]}:${parts[1]}`;
-  if (parts.length === 2) return t.trim();
-  return `${t.trim()}:00`;
+function normaliseTime(raw: string): string {
+  const s = raw.trim();
+  if (!s) return "";
+
+  // ── 12-hour format (optional minutes, optional seconds, required AM/PM) ──
+  const h12 = s.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)$/i);
+  if (h12) {
+    let h = parseInt(h12[1], 10);
+    const m = h12[2] ?? "00";
+    const period = h12[3].toUpperCase();
+    if (period === "AM" && h === 12) h = 0;
+    if (period === "PM" && h !== 12) h += 12;
+    return `${String(h).padStart(2, "0")}:${m}`;
+  }
+
+  // ── Excel time serial (decimal fraction of a full day, 0 < x < 1) ────────
+  // e.g. 19:22 = (19*60 + 22) / (24*60) ≈ 0.80694
+  const decimal = parseFloat(s);
+  if (!isNaN(decimal) && !s.includes(":") && decimal > 0 && decimal < 1) {
+    const totalMins = Math.round(decimal * 24 * 60);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
+  // ── Colon-separated (24h with optional seconds) ───────────────────────────
+  const parts = s.split(":");
+  if (parts.length >= 3) {
+    // HH:MM:SS → HH:MM
+    return `${parts[0].padStart(2, "0")}:${parts[1]}`;
+  }
+  if (parts.length === 2) {
+    // HH:MM → HH:MM (zero-pad the hour)
+    return `${parts[0].padStart(2, "0")}:${parts[1]}`;
+  }
+
+  // ── Bare integer hour ─────────────────────────────────────────────────────
+  if (/^\d{1,2}$/.test(s)) {
+    return `${s.padStart(2, "0")}:00`;
+  }
+
+  // ── Unrecognised — return trimmed as-is so callers can log it ────────────
+  return s;
 }
 
 // ── POST /upload/races ────────────────────────────────────────────────────────
@@ -210,8 +256,8 @@ router.post("/upload/races", async (req, res): Promise<void> => {
         let racecardId: number;
 
         if (date) {
-          // Full data — upsert by date+venue+time
-          const existing = await db
+          // ── 1. Exact match: venue + date + time ──────────────────────────
+          const exactMatch = await db
             .select({ id: racecardsTable.id })
             .from(racecardsTable)
             .where(and(
@@ -221,17 +267,70 @@ router.post("/upload/races", async (req, res): Promise<void> => {
             ))
             .limit(1);
 
-          if (existing.length > 0) {
-            racecardId = existing[0].id;
-          } else {
-            const [inserted] = await db.insert(racecardsTable).values({
-              venue, raceDate: date, raceTime: time,
+          if (exactMatch.length > 0) {
+            racecardId = exactMatch[0].id;
+            // Refresh metadata so re-uploads propagate going/distance/name changes.
+            await db.update(racecardsTable).set({
               raceName, distance, going, raceClass,
-              prize:       prize       || undefined,
-              nonRunners:  nonRunners  || undefined,
-            }).returning();
-            racecardId = inserted.id;
-            racesInserted++;
+              ...(prize      ? { prize }      : {}),
+              ...(nonRunners ? { nonRunners } : {}),
+            }).where(eq(racecardsTable.id, racecardId));
+          } else {
+            // ── 2. Fuzzy match: same venue + date, any time ───────────────
+            // If a horse from this group already exists in another racecard
+            // at the same venue/date, the race time has been corrected in the
+            // source data.  Update the existing racecard's time rather than
+            // creating a duplicate.
+            const horseNames = entry.rows
+              .map(r => col(r, "horse_name"))
+              .filter(Boolean);
+
+            let fuzzyId: number | null = null;
+            if (horseNames.length > 0) {
+              const sameDayRacecards = await db
+                .select({ id: racecardsTable.id })
+                .from(racecardsTable)
+                .where(and(
+                  eq(racecardsTable.raceDate, date),
+                  eq(racecardsTable.venue, venue),
+                ));
+
+              for (const candidate of sameDayRacecards) {
+                const overlap = await db
+                  .select({ id: runnersTable.id })
+                  .from(runnersTable)
+                  .where(and(
+                    eq(runnersTable.racecardId, candidate.id),
+                    inArray(runnersTable.horseName, horseNames),
+                  ))
+                  .limit(1);
+
+                if (overlap.length > 0) {
+                  fuzzyId = candidate.id;
+                  break;
+                }
+              }
+            }
+
+            if (fuzzyId !== null) {
+              // Same race, corrected time — update the existing racecard.
+              racecardId = fuzzyId;
+              await db.update(racecardsTable).set({
+                raceTime: time, raceName, distance, going, raceClass,
+                ...(prize      ? { prize }      : {}),
+                ...(nonRunners ? { nonRunners } : {}),
+              }).where(eq(racecardsTable.id, racecardId));
+            } else {
+              // ── 3. Genuinely new race ───────────────────────────────────
+              const [inserted] = await db.insert(racecardsTable).values({
+                venue, raceDate: date, raceTime: time,
+                raceName, distance, going, raceClass,
+                prize:      prize      || undefined,
+                nonRunners: nonRunners || undefined,
+              }).returning();
+              racecardId = inserted.id;
+              racesInserted++;
+            }
           }
         } else {
           // No date — find matching racecard by venue+time
@@ -258,29 +357,52 @@ router.post("/upload/races", async (req, res): Promise<void> => {
       }
     }
 
-    // Insert runners
+    // Upsert runners — update existing rows rather than inserting duplicates.
     for (const [, entry] of raceMap) {
       if (!entry.racecardId) continue;
       for (const row of entry.rows) {
         const horseName = col(row, "horse_name");
         if (!horseName) continue;
         try {
-          await db.insert(runnersTable).values({
-            racecardId:  entry.racecardId,
-            horseName,
-            jockey:  col(row, "jockey")  || "",
-            trainer: col(row, "trainer") || "",
-            weight:  col(row, "weight")  || "",
-            draw:    col(row, "draw") ? parseInt(col(row, "draw"), 10) : undefined,
-            age:     col(row, "age")  || undefined,
-            form:    col(row, "form") || undefined,
-            odds:    col(row, "odds") || undefined,
-            isNonRunner: false,
-            scratched:   false,
-          });
-          runnersInserted++;
+          const [existing] = await db
+            .select({ id: runnersTable.id })
+            .from(runnersTable)
+            .where(and(
+              eq(runnersTable.racecardId, entry.racecardId),
+              eq(runnersTable.horseName, horseName),
+            ))
+            .limit(1);
+
+          if (existing) {
+            await db.update(runnersTable).set({
+              jockey:      col(row, "jockey")  || "",
+              trainer:     col(row, "trainer") || "",
+              weight:      col(row, "weight")  || "",
+              draw:        col(row, "draw") ? parseInt(col(row, "draw"), 10) : null,
+              age:         col(row, "age")  || null,
+              form:        col(row, "form") || null,
+              odds:        col(row, "odds") || null,
+              isNonRunner: false,
+              scratched:   false,
+            }).where(eq(runnersTable.id, existing.id));
+          } else {
+            await db.insert(runnersTable).values({
+              racecardId:  entry.racecardId,
+              horseName,
+              jockey:  col(row, "jockey")  || "",
+              trainer: col(row, "trainer") || "",
+              weight:  col(row, "weight")  || "",
+              draw:    col(row, "draw") ? parseInt(col(row, "draw"), 10) : undefined,
+              age:     col(row, "age")  || undefined,
+              form:    col(row, "form") || undefined,
+              odds:    col(row, "odds") || undefined,
+              isNonRunner: false,
+              scratched:   false,
+            });
+            runnersInserted++;
+          }
         } catch (err) {
-          errors.push(`Failed to insert runner ${horseName}: ${String(err)}`);
+          errors.push(`Failed to upsert runner ${horseName}: ${String(err)}`);
         }
       }
     }

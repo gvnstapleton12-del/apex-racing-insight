@@ -92,6 +92,14 @@ type RacecardRow = {
   trainerComments?: string | null; nonRunners?: string | null;
 };
 
+// The /api/racecards/:id/analysis endpoint returns both racecard and runners.
+// Typing both here ensures raceTime always comes from the same racecard object
+// as the runners — never from an index-paired list-endpoint response.
+type AnalysisData = {
+  racecard: RacecardRow;
+  runners:  RunnerRow[];
+};
+
 function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
   bodCandidates: ScoredPick[];
   topRatedPicks: ScoredPick[];
@@ -367,7 +375,9 @@ export default function Dashboard() {
       queryFn: async () => {
         const res = await fetch(`/api/racecards/${r.id}/analysis`);
         if (!res.ok) throw new Error("failed");
-        return res.json() as Promise<{ runners: RunnerRow[] }>;
+        // Include full racecard so raceTime always comes from the same object
+        // as the runners — no index-based pairing required.
+        return res.json() as Promise<AnalysisData>;
       },
       staleTime: 60_000,
       enabled: (todayRacecards?.length ?? 0) > 0,
@@ -389,9 +399,11 @@ export default function Dashboard() {
     const allEachWay:       ScoredPick[] = [];
     const allAvoid:         AvoidEntry[] = [];
 
-    analysisQueries.forEach((q, i) => {
-      const rc = todayRacecards[i];
-      if (!q.data || !rc) return;
+    analysisQueries.forEach((q) => {
+      // Use the racecard bundled with the analysis response — this guarantees
+      // raceTime and all metadata come from the exact same racecard as its runners.
+      if (!q.data?.racecard) return;
+      const rc = q.data.racecard;
       const { bodCandidates, topRatedPicks, eachWayPicks, avoid }
         = buildRaceEntries(rc, q.data.runners);
 
