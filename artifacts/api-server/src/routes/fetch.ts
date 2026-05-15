@@ -191,14 +191,36 @@ router.post("/fetch/today", async (req, res): Promise<void> => {
       let racecardId: number;
       if (existing.length > 0) {
         racecardId = existing[0].id;
+        // If this looks like a stub (name = "Venue HH:MM"), upgrade it with real details
+        const [current] = await db.select({ raceName: racecardsTable.raceName }).from(racecardsTable).where(eq(racecardsTable.id, racecardId)).limit(1);
+        const isStub = !current?.raceName || current.raceName === `${venue} ${raceTime}`;
+        if (isStub) {
+          await db.update(racecardsTable).set({ raceName, distance, going, raceClass, prize: prize ?? undefined }).where(eq(racecardsTable.id, racecardId));
+        }
         racesSkipped++;
       } else {
-        const [inserted] = await db.insert(racecardsTable).values({
-          venue, raceDate, raceTime, raceName, distance, going, raceClass,
-          prize: prize ?? undefined,
-        }).returning();
-        racecardId = inserted.id;
-        racesInserted++;
+        // Check if a stub exists for this venue+time on today (non-runner paste may have created it without date match)
+        const stub = await db
+          .select({ id: racecardsTable.id })
+          .from(racecardsTable)
+          .where(and(
+            eq(racecardsTable.venue, venue),
+            eq(racecardsTable.raceTime, raceTime),
+            eq(racecardsTable.raceDate, raceDate),
+          ))
+          .limit(1);
+        if (stub.length > 0) {
+          racecardId = stub[0].id;
+          await db.update(racecardsTable).set({ raceName, distance, going, raceClass, prize: prize ?? undefined }).where(eq(racecardsTable.id, racecardId));
+          racesSkipped++;
+        } else {
+          const [inserted] = await db.insert(racecardsTable).values({
+            venue, raceDate, raceTime, raceName, distance, going, raceClass,
+            prize: prize ?? undefined,
+          }).returning();
+          racecardId = inserted.id;
+          racesInserted++;
+        }
       }
 
       // Insert runners
