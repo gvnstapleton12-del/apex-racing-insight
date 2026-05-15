@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useParams, Link } from "wouter";
+import { HorseLink } from "@/components/HorseLink";
 import {
   useGetRacecardAnalysis, getGetRacecardAnalysisQueryKey,
   useUpdateRacecard,
@@ -267,7 +268,7 @@ export default function RacecardDetail() {
           <Card className="border-primary/50 bg-primary/5">
             <CardContent className="px-4 py-3">
               <div className="text-xs text-primary font-semibold tracking-widest uppercase mb-1">Top Pick</div>
-              <div className="font-bold">{analysis.topPick.horseName}</div>
+              <HorseLink horseName={analysis.topPick.horseName} racecardId={Number(racecardId)} className="font-bold" />
               <div className="text-xs text-muted-foreground">{analysis.topPick.jockey} · {analysis.topPick.trainer}</div>
             </CardContent>
           </Card>
@@ -290,6 +291,7 @@ export default function RacecardDetail() {
         }}
         runners={runners}
         raceVolatility={raceVolatility}
+        racecardId={Number(racecardId)}
       />
 
       {/* Contextual Intelligence */}
@@ -392,7 +394,7 @@ export default function RacecardDetail() {
                     {/* Name + badges */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-base leading-tight">{runner.horseName}</span>
+                        <HorseLink horseName={runner.horseName} racecardId={Number(racecardId)} runnerId={runner.id} className="font-bold text-base" />
                         {runner.odds && (
                           <span className="text-sm font-mono font-semibold text-primary">{runner.odds}</span>
                         )}

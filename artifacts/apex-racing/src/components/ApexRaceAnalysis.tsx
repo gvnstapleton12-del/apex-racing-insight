@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { HorseLink } from "@/components/HorseLink";
 import {
   Star, Eye, AlertTriangle, Film, TrendingUp, ChevronDown, ChevronUp,
   Zap, ShieldAlert, Trophy, Ban,
@@ -57,6 +58,7 @@ interface Props {
   racecardInput: RacecardInput;
   runners: Runner[];
   raceVolatility: RaceVolatilityResult;
+  racecardId?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -161,6 +163,7 @@ interface PickCardProps {
   entry?: RankedEntry;
   reason?: string;
   governanceNote?: string;
+  racecardId?: number;
 }
 
 const PICK_CONFIG = {
@@ -171,7 +174,7 @@ const PICK_CONFIG = {
   dangerous_fav:  { label: "DANGER FAVOURITE", icon: <AlertTriangle className="h-3.5 w-3.5" />, border: "border-red-500/40",     bg: "bg-red-500/8",     accent: "text-red-400",     dot: "bg-red-400"     },
 };
 
-function PickCard({ type, entry, reason, governanceNote }: PickCardProps) {
+function PickCard({ type, entry, reason, governanceNote, racecardId }: PickCardProps) {
   const cfg = PICK_CONFIG[type];
   const isEmpty = !entry;
 
@@ -193,7 +196,7 @@ function PickCard({ type, entry, reason, governanceNote }: PickCardProps) {
         <>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="font-bold text-base leading-tight truncate">{entry.runner.horseName}</div>
+              <HorseLink horseName={entry.runner.horseName} racecardId={racecardId} runnerId={entry.runner.id} className="font-bold text-base leading-tight" />
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 {entry.runner.odds && (
                   <span className="text-xs font-mono font-semibold text-primary">{entry.runner.odds}</span>
@@ -241,7 +244,7 @@ function NoBetBanner({ raceVolatility }: { raceVolatility: RaceVolatilityResult 
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Props) {
+export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility, racecardId }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const ranked: RankedEntry[] = useMemo(() => {
@@ -379,11 +382,12 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
           type="top_rated"
           entry={topRated}
           reason={topRated.result.ability.note}
+          racecardId={racecardId}
         />
 
         {/* BEST OF DAY */}
         {blocked.includes("best_of_day") ? (
-          <PickCard type="best_of_day" governanceNote={`Blocked — ${govNote}`} />
+          <PickCard type="best_of_day" governanceNote={`Blocked — ${govNote}`} racecardId={racecardId} />
         ) : (
           <PickCard
             type="best_of_day"
@@ -391,23 +395,25 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
             reason={bestOfDay
               ? `${bestOfDay.result.classificationNote}${allBOD.length > 1 ? ` · Also: ${allBOD.slice(1).map(e => e.runner.horseName).join(", ")}` : ""}`
               : "No horse reached Best Of Day threshold"}
+            racecardId={racecardId}
           />
         )}
 
         {/* HIDDEN VALUE */}
         {blocked.includes("hidden_value") ? (
-          <PickCard type="hidden_value" governanceNote={`Blocked — ${govNote}`} />
+          <PickCard type="hidden_value" governanceNote={`Blocked — ${govNote}`} racecardId={racecardId} />
         ) : (
           <PickCard
             type="hidden_value"
             entry={hvPick}
             reason={hvPick ? hvPick.result.hiddenValue.note : "No hidden value candidate identified"}
+            racecardId={racecardId}
           />
         )}
 
         {/* REPLAY UPGRADE */}
         {blocked.includes("replay_upgrade") ? (
-          <PickCard type="replay_upgrade" governanceNote={`Blocked — ${govNote}`} />
+          <PickCard type="replay_upgrade" governanceNote={`Blocked — ${govNote}`} racecardId={racecardId} />
         ) : (
           <PickCard
             type="replay_upgrade"
@@ -415,6 +421,7 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
             reason={replayPick
               ? `${replayPick.result.replayIntelligence.note}${allReplay.length > 1 ? ` · Also: ${allReplay.slice(1).map(e => e.runner.horseName).join(", ")}` : ""}`
               : "No replay upgrade candidate"}
+            racecardId={racecardId}
           />
         )}
 
@@ -425,6 +432,7 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
           reason={dangerFav
             ? `High volatility risk (${dangerFav.result.volatilityRisk.score}/100) · ${dangerFav.result.volatilityRisk.note}`
             : undefined}
+          racecardId={racecardId}
           governanceNote={!dangerFav ? "Market favourite not flagged as dangerous" : undefined}
         />
       </div>
@@ -475,7 +483,7 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
                   {/* Horse info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm leading-tight">{runner.horseName}</span>
+                      <HorseLink horseName={runner.horseName} racecardId={racecardId} runnerId={runner.id} className="font-semibold text-sm" />
                       {runner.odds && <span className="text-xs font-mono font-semibold text-primary shrink-0">{runner.odds}</span>}
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${confColor}`}>{confLabel}</span>
                       {triggers.length > 0 && (

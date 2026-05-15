@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Loader2, ChevronLeft, Plus, Trash2, Edit2, Save, X, BookOpen, Film } from "lucide-react";
+import { HorseLink } from "@/components/HorseLink";
 import { detectTriggersFromNoteContent, type DetectedTrigger } from "@/lib/replayTriggers";
 import { useToast } from "@/hooks/use-toast";
 
@@ -168,7 +169,9 @@ export default function HorseProfile() {
 
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight">{horse.name}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            <HorseLink horseName={horse.name} horseId={horseId} className="text-2xl font-bold tracking-tight" />
+          </h1>
           <div className="flex flex-wrap gap-2 mt-2">
             {horse.trainer && <Badge variant="outline" className="text-xs">{horse.trainer}</Badge>}
             {horse.age && <Badge variant="outline" className="text-xs">{horse.age}yo</Badge>}

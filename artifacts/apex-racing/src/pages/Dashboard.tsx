@@ -17,6 +17,7 @@ import {
   runApexEngineForField, computeRaceVolatility,
   type RaceVolatilityResult, type VolatilityTier,
 } from "@/lib/apexEngine";
+import { HorseLink } from "@/components/HorseLink";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -204,7 +205,9 @@ function BetOfDayHero({ pick }: { pick: ScoredPick }) {
               <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Bet Of The Day</span>
               <ConfChip cls="best_of_day" />
             </div>
-            <div className="text-2xl md:text-3xl font-bold leading-tight text-foreground">{pick.horseName}</div>
+            <div className="text-2xl md:text-3xl font-bold leading-tight text-foreground">
+              <HorseLink horseName={pick.horseName} racecardId={pick.racecardId} className="font-bold" />
+            </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold text-primary">{pick.venue}</span>
               <span className="text-muted-foreground/50 text-sm">·</span>
@@ -253,7 +256,7 @@ function BoardRow({ pick, rank }: { pick: ScoredPick; rank: number }) {
         <span className="text-xs font-bold font-mono text-muted-foreground/35 w-5 shrink-0 text-right">{rank}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm leading-tight">{pick.horseName}</span>
+            <HorseLink horseName={pick.horseName} racecardId={pick.racecardId} className="font-semibold text-sm" />
             {pick.odds && (
               <span className="text-[11px] font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
                 {pick.odds}
