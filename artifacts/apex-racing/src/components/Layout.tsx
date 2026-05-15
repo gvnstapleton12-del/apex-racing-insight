@@ -53,7 +53,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen text-foreground overflow-hidden" style={{
+      backgroundImage: `linear-gradient(to bottom right, hsl(220 25% 7% / 0.93), hsl(220 25% 12% / 0.90)), url('/racing-bg.png')`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }}>
 
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside className="hidden md:flex w-64 border-r border-sidebar-border bg-sidebar shrink-0 flex-col">

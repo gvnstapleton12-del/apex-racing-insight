@@ -37,16 +37,21 @@ const createSchema = z.object({
 
 type CreateForm = z.infer<typeof createSchema>;
 
+const todayStr = new Date().toISOString().slice(0, 10);
+const yesterdayStr = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+
 export default function Racecards() {
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
+  const [activeTab, setActiveTab] = useState<"today" | "yesterday">("today");
   const [dialogOpen, setDialogOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const dateFilter = activeTab === "today" ? todayStr : yesterdayStr;
+
   const { data: racecards, isLoading } = useListRacecards(
-    dateFilter ? { date: dateFilter } : {},
-    { query: { queryKey: getListRacecardsQueryKey(dateFilter ? { date: dateFilter } : {}) } }
+    { date: dateFilter },
+    { query: { queryKey: getListRacecardsQueryKey({ date: dateFilter }) } }
   );
 
   const createRacecard = useCreateRacecard();
@@ -163,31 +168,34 @@ export default function Racecards() {
         </Dialog>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            data-testid="input-search-racecards"
-            className="pl-9"
-            placeholder="Search venue or race…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-2">
-          <Input
-            data-testid="input-filter-date"
-            type="date"
-            className="flex-1 sm:w-40"
-            value={dateFilter}
-            onChange={e => setDateFilter(e.target.value)}
-          />
-          {dateFilter && (
-            <Button variant="outline" onClick={() => setDateFilter("")} data-testid="button-clear-date" className="shrink-0">
-              Clear
-            </Button>
-          )}
-        </div>
+      {/* Today / Yesterday tabs */}
+      <div className="flex items-center gap-1 bg-secondary/40 rounded-lg p-1 w-fit">
+        {(["today", "yesterday"] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${
+              activeTab === tab
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid={`tab-${tab}`}
+          >
+            {tab === "today" ? `Today` : `Yesterday`}
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          data-testid="input-search-racecards"
+          className="pl-9"
+          placeholder="Search venue or race…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
       </div>
 
       {isLoading ? (
