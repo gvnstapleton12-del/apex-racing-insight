@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Upload as UploadIcon, FileText, CheckCircle, AlertCircle, X, RefreshCw, Eye, EyeOff } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Upload as UploadIcon, FileText, CheckCircle, AlertCircle, X, RefreshCw, Eye, EyeOff, ClipboardPaste } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const LS_USERNAME = "apex_racing_api_username";
@@ -391,6 +392,127 @@ function FetchCard() {
   );
 }
 
+/** Parse ATR-style paste or plain "Course Time Horse" text into NR rows */
+function parseNrPaste(raw: string): ParsedRow[] {
+  const rows: ParsedRow[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Try tab-separated first (ATR copy), then multiple spaces, then single space
+    const parts = trimmed.includes("\t")
+      ? trimmed.split("\t").map(p => p.trim())
+      : trimmed.split(/\s{2,}/).map(p => p.trim());
+
+    if (parts.length < 3) continue;
+
+    const course = parts[0];
+    const time   = parts[1];
+    // Strip leading "N." number prefix and trailing " - Non Runner" / "- Non-Runner"
+    let horse = parts.slice(2).join(" ").trim();
+    horse = horse.replace(/^\d+\.\s*/, "");
+    horse = horse.replace(/\s*[-–]\s*Non[\s-]?Runner\s*$/i, "").trim();
+    if (!course || !time || !horse) continue;
+
+    rows.push({ Course: course, "Race Time": time, Horse: horse });
+  }
+  return rows;
+}
+
+function PasteNonRunnersCard() {
+  const { toast } = useToast();
+  const uploadRaces = useUploadRaces();
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState<ParsedRow[] | null>(null);
+  const [result, setResult] = useState<{ success: boolean; rowsProcessed: number; rowsInserted: number; errors: string[] } | null>(null);
+
+  const handleParse = () => {
+    const rows = parseNrPaste(text);
+    if (rows.length === 0) {
+      toast({ title: "No rows parsed — check the format", variant: "destructive" });
+      return;
+    }
+    setPreview(rows);
+    setResult(null);
+  };
+
+  const handleSubmit = () => {
+    if (!preview) return;
+    uploadRaces.mutate({ data: { filename: "paste-non-runners", data: preview } }, {
+      onSuccess: data => {
+        setResult(data);
+        setPreview(null);
+        setText("");
+        toast({ title: `Non-runners: ${data.rowsInserted} marked` });
+      },
+      onError: () => toast({ title: "Upload failed", variant: "destructive" }),
+    });
+  };
+
+  return (
+    <Card className="border-border/50">
+      <CardHeader className="pb-2 pt-4 px-4">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <ClipboardPaste className="h-4 w-4 text-primary" />
+          Paste Non-Runners
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          On <a href="https://www.attheraces.com/nonrunners" target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">attheraces.com/nonrunners</a>, select all rows in the table and paste below.
+          Format: <span className="font-mono">Course &nbsp; Time &nbsp; Horse</span> (tab or multi-space separated).
+        </p>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 space-y-3">
+        <Textarea
+          value={text}
+          onChange={e => { setText(e.target.value); setPreview(null); setResult(null); }}
+          placeholder={"Newmarket\t17:25\t1.Angely Shani - Non Runner\nYork\t16:40\t19.Believeinromance N - Non Runner"}
+          className="font-mono text-xs min-h-[120px] resize-y"
+        />
+
+        {!preview && (
+          <Button variant="outline" className="w-full gap-2" onClick={handleParse} disabled={!text.trim()}>
+            <ClipboardPaste className="h-4 w-4" />
+            Parse {text.trim() ? `(${text.trim().split(/\r?\n/).filter(l => l.trim()).length} lines)` : ""}
+          </Button>
+        )}
+
+        {preview && (
+          <div className="space-y-2">
+            <div className="rounded border border-border/50 divide-y divide-border/30 max-h-48 overflow-y-auto text-xs">
+              {preview.map((r, i) => (
+                <div key={i} className="flex gap-3 px-3 py-1.5 font-mono">
+                  <span className="text-muted-foreground w-24 shrink-0">{r["Course"]}</span>
+                  <span className="text-muted-foreground w-12 shrink-0">{r["Race Time"]}</span>
+                  <span className="text-foreground">{r["Horse"]}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => setPreview(null)}>
+                <X className="h-3.5 w-3.5" /> Edit
+              </Button>
+              <Button className="flex-1 gap-2" onClick={handleSubmit} disabled={uploadRaces.isPending}>
+                {uploadRaces.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                Mark {preview.length} horses as non-runners
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {result && (
+          <div className={`rounded-md p-3 border text-sm ${result.success ? "border-green-500/30 bg-green-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+            <div className="flex items-center gap-2">
+              {result.success ? <CheckCircle className="h-4 w-4 text-green-400" /> : <AlertCircle className="h-4 w-4 text-amber-400" />}
+              <span>{result.rowsInserted} non-runners marked ({result.rowsProcessed} processed)</span>
+            </div>
+            {result.errors.slice(0, 3).map((e, i) => <p key={i} className="text-xs text-red-400 mt-1">{e}</p>)}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Upload() {
   const { toast } = useToast();
   const uploadRaces = useUploadRaces();
@@ -426,6 +548,8 @@ export default function Upload() {
       </div>
 
       <FetchCard />
+
+      <PasteNonRunnersCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <UploadZone
