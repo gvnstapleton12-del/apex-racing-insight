@@ -63,9 +63,28 @@ interface ApiNonRunner {
 
 function normaliseTime(t: string): string {
   const parts = t.trim().split(":");
-  if (parts.length >= 3) return `${parts[0]}:${parts[1]}`;
-  if (parts.length === 2) return t.trim();
-  return `${t.trim()}:00`;
+  let h: number, m: number;
+  if (parts.length >= 2) {
+    h = parseInt(parts[0], 10);
+    m = parseInt(parts[1], 10);
+  } else {
+    h = parseInt(t.trim(), 10);
+    m = 0;
+  }
+  if (isNaN(h) || isNaN(m)) return t.trim();
+  // Racing API free tier sometimes returns 12-hour times (e.g. "2:08" for 14:08).
+  // UK/Irish racing never starts before 10:00, so h 1–9 must be a PM time → +12.
+  if (h >= 1 && h <= 9) h += 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** Extract HH:MM from a racecard, preferring the ISO off_dt field if present. */
+function extractRaceTime(rc: ApiRacecard): string {
+  if (rc.off_dt) {
+    const m = rc.off_dt.match(/T(\d{2}:\d{2})/);
+    if (m) return m[1];
+  }
+  return normaliseTime(rc.off_time ?? "");
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -146,7 +165,7 @@ router.post("/fetch/today", async (req, res): Promise<void> => {
   for (const rc of racecards) {
     const venue    = rc.course ?? "";
     const raceDate = rc.date ?? targetDate;
-    const raceTime = normaliseTime(rc.off_time ?? "");
+    const raceTime = extractRaceTime(rc);
     const raceName = rc.race_name ?? `${venue} ${raceTime}`;
     const distance = rc.distance_f ?? rc.distance_round ?? rc.distance ?? "";
     const going    = rc.going_detailed ?? rc.going ?? "";
