@@ -45,8 +45,9 @@ interface AvoidEntry {
 }
 
 interface DayBoard {
-  bestOfDay:      ScoredPick | null;   // exactly one, or null
-  topRated:       ScoredPick[];        // high-quality picks that didn't make BOD
+  betOfDay:       ScoredPick | null;   // single elected horse — highest-scoring BOD only
+  bestOfDay:      ScoredPick[];        // all other best_of_day qualifiers, ranked
+  topRated:       ScoredPick[];        // engine top_rated_high_variance
   eachWayValue:   ScoredPick[];
   replayUpgrades: ScoredPick[];
   hiddenValue:    ScoredPick[];
@@ -213,8 +214,8 @@ function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
 
 // ── Aggregate into day board ──────────────────────────────────────────────────
 
-function electBestOfDay(candidates: ScoredPick[]): { winner: ScoredPick | null; rest: ScoredPick[] } {
-  // Governance filters
+function electBetOfDay(candidates: ScoredPick[]): { winner: ScoredPick | null; rest: ScoredPick[] } {
+  // Only Best Of The Day horses are eligible — governance filters applied
   const qualified = candidates
     .filter(c =>
       c.totalScore >= BOD_MIN_SCORE &&
@@ -224,15 +225,14 @@ function electBestOfDay(candidates: ScoredPick[]): { winner: ScoredPick | null; 
     .sort((a, b) => b.totalScore - a.totalScore);
 
   if (qualified.length === 0) {
-    // No one qualifies — all BOD candidates demote to top_rated_high_variance
+    // No single horse clears governance — all remain in Best Of The Day list
     return { winner: null, rest: candidates };
   }
 
-  const winner = { ...qualified[0], confidenceClass: "best_of_day" };
-  // All other BOD candidates (qualified or not) become top_rated_high_variance
+  const winner = qualified[0];
+  // Remaining BOD candidates still carry best_of_day classification in the list below
   const rest = candidates
-    .filter(c => !(c.racecardId === winner.racecardId && c.horseName === winner.horseName))
-    .map(c => ({ ...c, confidenceClass: "top_rated_high_variance" }));
+    .filter(c => !(c.racecardId === winner.racecardId && c.horseName === winner.horseName));
 
   return { winner, rest };
 }
@@ -248,8 +248,8 @@ function ConfChip({ cls }: { cls: string }) {
   );
 }
 
-// Single hero card for the one Best Of The Day selection
-function BestOfDayHero({ pick }: { pick: ScoredPick }) {
+// Single hero card for the one Bet Of The Day election
+function BetOfDayHero({ pick }: { pick: ScoredPick }) {
   return (
     <Link href={`/racecards/${pick.racecardId}`}>
       <div className="group relative overflow-hidden rounded-xl border border-amber-500/50 bg-gradient-to-br from-amber-500/12 via-amber-400/5 to-transparent p-5 cursor-pointer hover:border-amber-500/80 transition-all duration-200">
@@ -258,7 +258,7 @@ function BestOfDayHero({ pick }: { pick: ScoredPick }) {
           <div className="space-y-2 min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <Trophy className="h-4 w-4 text-amber-400 shrink-0" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Best Of The Day</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Bet Of The Day</span>
               <ConfChip cls="best_of_day" />
             </div>
             <div className="text-2xl md:text-3xl font-bold leading-tight text-foreground">{pick.horseName}</div>
@@ -290,14 +290,14 @@ function BestOfDayHero({ pick }: { pick: ScoredPick }) {
 }
 
 // No-qualifier banner
-function NoBestOfDay({ scanning }: { scanning: boolean }) {
+function NoBetOfDay({ scanning }: { scanning: boolean }) {
   return (
     <div className="rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 p-5 flex items-center gap-3">
       <ShieldOff className="h-5 w-5 text-amber-400/40 shrink-0" />
       <p className="text-sm text-muted-foreground/60">
         {scanning
-          ? "Scanning races for a Best Of The Day qualifier…"
-          : "No Best Of The Day qualifier today — no horse clears the governance thresholds (score, field separation, volatility)."}
+          ? "Scanning Best Of The Day pool for a Bet Of The Day qualifier…"
+          : "No Bet Of The Day today — no Best Of The Day horse cleared all governance thresholds (score ≥ 62, field separation ≥ 4 pts, low/medium volatility)."}
       </p>
     </div>
   );
@@ -434,7 +434,7 @@ export default function Dashboard() {
 
   const board: DayBoard = useMemo(() => {
     const empty: DayBoard = {
-      bestOfDay: null, topRated: [], eachWayValue: [],
+      betOfDay: null, bestOfDay: [], topRated: [], eachWayValue: [],
       replayUpgrades: [], hiddenValue: [], avoidRaces: [],
     };
     if (!todayRacecards) return empty;
@@ -460,12 +460,9 @@ export default function Dashboard() {
       if (avoid) allAvoid.push(avoid);
     });
 
-    // ── Day-level BOD governance: elect exactly one winner ──────────────────
-    const { winner: bestOfDay, rest: demotedBod } = electBestOfDay(allBodCandidates);
-
-    // Demoted BOD candidates join the Top Rated list
-    const topRatedMerged = [...allTopRated, ...demotedBod]
-      .sort((a, b) => b.totalScore - a.totalScore);
+    // ── Elect a single Bet Of The Day from the Best Of The Day pool ──────────
+    // Only best_of_day horses are eligible — Hidden Value / Replay / High Variance excluded
+    const { winner: betOfDay, rest: remainingBod } = electBetOfDay(allBodCandidates);
 
     // Dedup helper
     const dedup = (arr: ScoredPick[]) => {
@@ -478,8 +475,11 @@ export default function Dashboard() {
     };
 
     return {
-      bestOfDay,
-      topRated:       dedup(topRatedMerged),
+      betOfDay,
+      // Best Of The Day list = all remaining BOD horses after the winner is removed
+      bestOfDay:      dedup(remainingBod.sort((a, b) => b.totalScore - a.totalScore)),
+      // Top Rated = engine-classified top_rated_high_variance only
+      topRated:       dedup(allTopRated.sort((a, b) => b.totalScore - a.totalScore)),
       eachWayValue:   dedup(allEachWay.sort((a, b) => b.categoryScore - a.categoryScore)),
       replayUpgrades: dedup(allReplay.sort((a, b) => b.categoryScore - a.categoryScore)),
       hiddenValue:    dedup(allHidden.sort((a, b) => b.categoryScore - a.categoryScore)),
@@ -488,7 +488,7 @@ export default function Dashboard() {
   }, [analysisQueries, todayRacecards]);
 
   const isBootstrapping = loadingRacecards || (totalCount > 0 && loadedCount === 0);
-  const totalPicks = board.topRated.length + board.eachWayValue.length
+  const totalPicks = board.bestOfDay.length + board.topRated.length + board.eachWayValue.length
     + board.replayUpgrades.length + board.hiddenValue.length;
 
   return (
@@ -520,11 +520,11 @@ export default function Dashboard() {
       {/* Stats strip */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {[
-          { label: "Today's Races",  value: summary?.todayRaceCount ?? "—",          accent: "" },
-          { label: "Top Rated",      value: board.topRated.length    || (loadingAnalysis ? "…" : "0"), accent: "text-blue-400"    },
-          { label: "EW Value",       value: board.eachWayValue.length || (loadingAnalysis ? "…" : "0"), accent: "text-teal-400"    },
-          { label: "Replay Picks",   value: board.replayUpgrades.length || (loadingAnalysis ? "…" : "0"), accent: "text-purple-400" },
-          { label: "Avoid Today",    value: board.avoidRaces.length   || (loadingAnalysis ? "…" : "0"), accent: "text-red-400"     },
+          { label: "Today's Races",   value: summary?.todayRaceCount ?? "—",                             accent: "" },
+          { label: "Best Of The Day", value: board.bestOfDay.length    || (loadingAnalysis ? "…" : "0"), accent: "text-amber-400"  },
+          { label: "EW Value",        value: board.eachWayValue.length  || (loadingAnalysis ? "…" : "0"), accent: "text-teal-400"   },
+          { label: "Replay Picks",    value: board.replayUpgrades.length || (loadingAnalysis ? "…" : "0"), accent: "text-purple-400" },
+          { label: "Avoid Today",     value: board.avoidRaces.length    || (loadingAnalysis ? "…" : "0"), accent: "text-red-400"    },
         ].map(s => (
           <div key={s.label} className="bg-secondary/30 rounded-lg px-3 py-2.5 text-center">
             <div className={`text-xl font-bold font-mono ${s.accent}`}>{s.value}</div>
@@ -551,28 +551,28 @@ export default function Dashboard() {
       ) : (
         <div className="space-y-4">
 
-          {/* ── BEST OF THE DAY (hero — single horse) ─────────────────────── */}
+          {/* ── BET OF THE DAY (hero — single elected horse) ──────────────── */}
           <section className="space-y-2">
             <div className="flex items-center gap-2">
               <Trophy className="h-4 w-4 text-amber-400" />
-              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Best Of The Day</h2>
-              <span className="text-[10px] text-muted-foreground/40">Single strongest qualifier — governance enforced</span>
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Bet Of The Day</h2>
+              <span className="text-[10px] text-muted-foreground/40">Single strongest qualifier — elected from Best Of The Day pool only</span>
             </div>
-            {board.bestOfDay
-              ? <BestOfDayHero pick={board.bestOfDay} />
-              : <NoBestOfDay scanning={loadingAnalysis} />}
+            {board.betOfDay
+              ? <BetOfDayHero pick={board.betOfDay} />
+              : <NoBetOfDay scanning={loadingAnalysis} />}
           </section>
 
-          {/* ── TOP RATED ─────────────────────────────────────────────────── */}
+          {/* ── BEST OF THE DAY (ranked list — all other qualifiers) ──────── */}
           <BoardSection
-            icon={<Star className="h-4 w-4" />}
-            title="Top Rated"
-            subtitle="Highest confidence selections — strongest to weakest"
-            accent="text-blue-400"
-            picks={board.topRated}
+            icon={<Trophy className="h-4 w-4" />}
+            title="Best Of The Day"
+            subtitle="Controlled-confidence selections — strongest to weakest"
+            accent="text-amber-400"
+            picks={board.bestOfDay}
             maxRows={8}
             scanning={loadingAnalysis}
-            emptyNote="No top-rated qualifiers today."
+            emptyNote="No Best Of The Day qualifiers today."
           />
 
           {/* ── EACH WAY VALUE ────────────────────────────────────────────── */}
