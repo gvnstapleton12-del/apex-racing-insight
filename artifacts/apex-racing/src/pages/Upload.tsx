@@ -26,14 +26,32 @@ function parseCSV(text: string): ParsedRow[] {
   });
 }
 
+function formatExcelValue(v: unknown): string {
+  if (v instanceof Date) {
+    const year = v.getFullYear();
+    // Time-only values land on Excel epoch (1899/1900); real dates are > 1900
+    if (year <= 1900) {
+      const h = String(v.getHours()).padStart(2, "0");
+      const m = String(v.getMinutes()).padStart(2, "0");
+      return `${h}:${m}`;
+    }
+    const y  = v.getFullYear();
+    const mo = String(v.getMonth() + 1).padStart(2, "0");
+    const d  = String(v.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${d}`;
+  }
+  return String(v ?? "").trim();
+}
+
 function parseExcel(buffer: ArrayBuffer): ParsedRow[] {
-  const workbook = XLSX.read(buffer, { type: "array" });
+  // cellDates:true converts Excel serial numbers → JS Date objects
+  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
   return raw.map(r =>
     Object.fromEntries(
-      Object.entries(r).map(([k, v]) => [String(k).trim(), String(v ?? "")])
+      Object.entries(r).map(([k, v]) => [String(k).trim(), formatExcelValue(v)])
     )
   );
 }
