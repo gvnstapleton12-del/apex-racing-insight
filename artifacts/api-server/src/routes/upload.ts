@@ -60,9 +60,14 @@ function isNonRunnerFormat(rows: Record<string, unknown>[]): boolean {
   return hasHorse && hasVenue && hasTime && !hasDate;
 }
 
-/** Normalise a time string – strip seconds if present (13:22:00 → 13:22). */
+/** Normalise a time string.
+ *  - Strips seconds:  "13:22:00" → "13:22"
+ *  - Pads bare hours: "20"       → "20:00"
+ */
 function normaliseTime(t: string): string {
-  return t.replace(/:\d{2}$/, "").trim();
+  const stripped = t.replace(/:\d{2}$/, "").trim();   // drop seconds
+  // If result contains no colon it's just an hour number – add ":00"
+  return stripped.includes(":") ? stripped : `${stripped}:00`;
 }
 
 // ── POST /upload/races ────────────────────────────────────────────────────────
