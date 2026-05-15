@@ -61,13 +61,15 @@ function isNonRunnerFormat(rows: Record<string, unknown>[]): boolean {
 }
 
 /** Normalise a time string.
- *  - Strips seconds:  "13:22:00" → "13:22"
- *  - Pads bare hours: "20"       → "20:00"
+ *  - HH:MM:SS → HH:MM  (strip seconds — 3-part)
+ *  - HH:MM    → HH:MM  (already correct)
+ *  - HH       → HH:00  (bare hour — pad minutes)
  */
 function normaliseTime(t: string): string {
-  const stripped = t.replace(/:\d{2}$/, "").trim();   // drop seconds
-  // If result contains no colon it's just an hour number – add ":00"
-  return stripped.includes(":") ? stripped : `${stripped}:00`;
+  const parts = t.trim().split(":");
+  if (parts.length >= 3) return `${parts[0]}:${parts[1]}`;
+  if (parts.length === 2) return t.trim();
+  return `${t.trim()}:00`;
 }
 
 // ── POST /upload/races ────────────────────────────────────────────────────────
@@ -99,7 +101,7 @@ router.post("/upload/races", async (req, res): Promise<void> => {
 
       try {
         // Find the most recent racecard matching venue + time
-        const [racecard] = await db
+        const found = await db
           .select({ id: racecardsTable.id })
           .from(racecardsTable)
           .where(and(
@@ -109,9 +111,22 @@ router.post("/upload/races", async (req, res): Promise<void> => {
           .orderBy(desc(racecardsTable.raceDate))
           .limit(1);
 
-        if (!racecard) {
-          errors.push(`No racecard found for ${venue} ${time} – skipping ${horseName}`);
-          continue;
+        let racecardId: number;
+        if (found.length > 0) {
+          racecardId = found[0].id;
+        } else {
+          // Auto-create a stub racecard so non-runners aren't lost
+          const today = new Date().toISOString().slice(0, 10);
+          const [created] = await db.insert(racecardsTable).values({
+            venue,
+            raceDate:  today,
+            raceTime:  time,
+            raceName:  `${venue} ${time}`,
+            distance:  "",
+            going:     "",
+            raceClass: "",
+          }).returning();
+          racecardId = created.id;
         }
 
         // If the runner already exists, mark them as a non-runner
@@ -119,7 +134,7 @@ router.post("/upload/races", async (req, res): Promise<void> => {
           .select({ id: runnersTable.id })
           .from(runnersTable)
           .where(and(
-            eq(runnersTable.racecardId, racecard.id),
+            eq(runnersTable.racecardId, racecardId),
             eq(runnersTable.horseName, horseName),
           ))
           .limit(1);
@@ -132,7 +147,7 @@ router.post("/upload/races", async (req, res): Promise<void> => {
         } else {
           // Add them as a new non-runner entry
           await db.insert(runnersTable).values({
-            racecardId:  racecard.id,
+            racecardId,
             horseName,
             jockey:      col(row, "jockey")  || "",
             trainer:     col(row, "trainer") || "",
