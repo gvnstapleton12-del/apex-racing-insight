@@ -309,74 +309,95 @@ export default function RacecardDetail() {
           runners.map(runner => {
             const score = getScoreForRunner(runner.id);
             return (
-              <Card key={runner.id} className={`group transition-colors ${runner.isNonRunner || runner.scratched ? "opacity-50" : ""}`} data-testid={`card-runner-${runner.id}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4">
-                      {runner.draw && (
-                        <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-mono font-bold text-primary shrink-0">
-                          {runner.draw}
-                        </div>
-                      )}
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">{runner.horseName}</span>
-                          {runner.odds && <span className="text-sm font-mono text-primary">{runner.odds}</span>}
-                          {runner.isNonRunner && <Badge variant="outline" className="text-xs text-orange-400 border-orange-400/30">NR</Badge>}
-                          {runner.scratched && <Badge variant="outline" className="text-xs text-red-400 border-red-400/30">Scratched</Badge>}
-                          {score && <ConfidenceBadge confidenceClass={score.confidenceClass} />}
-                        </div>
-                        <div className="text-xs text-muted-foreground flex gap-3 mt-0.5">
-                          <span>{runner.jockey}</span>
-                          <span>·</span>
-                          <span>{runner.trainer}</span>
-                          {runner.weight && <><span>·</span><span>{runner.weight}</span></>}
-                          {runner.age && <><span>·</span><span>{runner.age}yo</span></>}
-                          {runner.form && <><span>·</span><span className="font-mono">{runner.form}</span></>}
-                        </div>
-                        {score && (
-                          <div className="mt-3 w-64 space-y-1">
-                            <div className="text-xs text-muted-foreground mb-2 flex items-center justify-between">
-                              <span>APEX Score</span>
-                              <span className="font-mono font-bold text-primary">{score.totalScore}</span>
-                            </div>
-                            <ApexScoreBar label="Ability" value={score.abilityScore} colorClass="bg-amber-500" />
-                            <ApexScoreBar label="Pace Fit" value={score.paceFitScore} colorClass="bg-blue-500" />
-                            <ApexScoreBar label="Tactical Resilience" value={score.tacticalResilienceScore} colorClass="bg-purple-500" />
-                            <ApexScoreBar label="Ground/Trip" value={score.groundTripScore} colorClass="bg-green-500" />
-                            <ApexScoreBar label="Replay Intelligence" value={score.replayIntelligenceScore} colorClass="bg-cyan-500" />
-                            <ApexScoreBar label="Hidden Value" value={score.hiddenValueScore} colorClass="bg-orange-500" />
-                            <ApexScoreBar label="Volatility Risk" value={score.volatilityRisk} colorClass="bg-red-500" />
-                          </div>
+              <Card
+                key={runner.id}
+                className={`transition-colors ${runner.isNonRunner || runner.scratched ? "opacity-40" : "hover:border-border/80"}`}
+                data-testid={`card-runner-${runner.id}`}
+              >
+                <CardContent className="p-0">
+                  {/* ── Header row ── */}
+                  <div className="flex items-center gap-3 px-3 pt-3 pb-2">
+                    {/* Draw circle */}
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-mono font-bold shrink-0 ${runner.draw ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
+                      {runner.draw ?? "—"}
+                    </div>
+
+                    {/* Name + badges */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-base leading-tight">{runner.horseName}</span>
+                        {runner.odds && (
+                          <span className="text-sm font-mono font-semibold text-primary">{runner.odds}</span>
                         )}
+                        {runner.isNonRunner && <Badge variant="outline" className="text-xs text-orange-400 border-orange-400/30 py-0">NR</Badge>}
+                        {runner.scratched && !runner.isNonRunner && <Badge variant="outline" className="text-xs text-red-400 border-red-400/30 py-0">Scratched</Badge>}
+                        {score && <ConfidenceBadge confidenceClass={score.confidenceClass} />}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                        {runner.jockey}{runner.trainer ? ` · ${runner.trainer}` : ""}
                       </div>
                     </div>
-                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
-                      <a
-                        href={`https://www.youtube.com/results?search_query=${encodeURIComponent(runner.horseName + " horse racing")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={`Watch ${runner.horseName} on YouTube`}
-                      >
-                        <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 border-red-500/30 hover:bg-red-500/10">
-                          <Youtube className="h-4 w-4" />
-                        </Button>
-                      </a>
-                      <Link href={`/racecards/${racecardId}/score/${runner.id}`}>
-                        <Button size="sm" variant="outline" className="h-8 text-xs px-2.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" data-testid={`button-score-runner-${runner.id}`}>
-                          APEX
-                        </Button>
-                      </Link>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                        onClick={() => removeRunner(runner.id)}
-                        data-testid={`button-delete-runner-${runner.id}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+
+                    {/* Meta chips */}
+                    <div className="flex flex-col items-end gap-1 shrink-0 text-xs text-muted-foreground font-mono">
+                      {runner.age && <span>{runner.age}yo</span>}
+                      {runner.weight && <span>{runner.weight}</span>}
                     </div>
+                  </div>
+
+                  {/* Form */}
+                  {runner.form && (
+                    <div className="px-3 pb-2">
+                      <span className="text-xs font-mono text-muted-foreground bg-secondary/50 rounded px-2 py-0.5">
+                        {runner.form}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* APEX score bars */}
+                  {score && (
+                    <div className="mx-3 mb-2 p-3 rounded-md bg-secondary/30 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-muted-foreground font-semibold tracking-wide uppercase">APEX Score</span>
+                        <span className="font-mono font-bold text-primary text-sm">{score.totalScore}</span>
+                      </div>
+                      <ApexScoreBar label="Ability" value={score.abilityScore} colorClass="bg-amber-500" />
+                      <ApexScoreBar label="Pace Fit" value={score.paceFitScore} colorClass="bg-blue-500" />
+                      <ApexScoreBar label="Tactical Resilience" value={score.tacticalResilienceScore} colorClass="bg-purple-500" />
+                      <ApexScoreBar label="Ground/Trip" value={score.groundTripScore} colorClass="bg-green-500" />
+                      <ApexScoreBar label="Replay Intelligence" value={score.replayIntelligenceScore} colorClass="bg-cyan-500" />
+                      <ApexScoreBar label="Hidden Value" value={score.hiddenValueScore} colorClass="bg-orange-500" />
+                      <ApexScoreBar label="Volatility Risk" value={score.volatilityRisk} colorClass="bg-red-500" />
+                    </div>
+                  )}
+
+                  {/* ── Action footer ── */}
+                  <div className="flex items-center gap-2 px-3 pb-3 pt-1 border-t border-border/30 mt-1">
+                    <a
+                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(runner.horseName + " horse racing")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors font-medium"
+                    >
+                      <Youtube className="h-3.5 w-3.5" />
+                      Watch
+                    </a>
+                    <span className="text-border/60 select-none">·</span>
+                    <Link href={`/racecards/${racecardId}/score/${runner.id}`}>
+                      <button className="text-xs text-muted-foreground hover:text-primary transition-colors font-medium" data-testid={`button-score-runner-${runner.id}`}>
+                        APEX Score
+                      </button>
+                    </Link>
+                    <div className="flex-1" />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive/50 hover:text-destructive h-7 w-7"
+                      onClick={() => removeRunner(runner.id)}
+                      data-testid={`button-delete-runner-${runner.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
