@@ -248,7 +248,7 @@ export default function Upload() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <UploadZone
           title="Races / Racecards"
-          description="Upload a spreadsheet or CSV with columns: venue, race_date, race_time, race_name, distance, going, class"
+          description="Upload a spreadsheet or CSV. Supports combined format (one runner per row) — racecards and runners are created automatically."
           onUpload={handleRacesUpload}
           isPending={uploadRaces.isPending}
           result={racesResult}
@@ -268,21 +268,27 @@ export default function Upload() {
 
       <Card className="border-border/50">
         <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-xs text-muted-foreground uppercase tracking-widest">Spreadsheet / CSV Format Reference</CardTitle>
+          <CardTitle className="text-xs text-muted-foreground uppercase tracking-widest">Accepted Column Names</CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-4">
           <div>
-            <p className="text-xs font-semibold text-muted-foreground mb-1">Races example (CSV or spreadsheet columns):</p>
-            <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono">
-              venue,race_date,race_time,race_name,distance,going,class<br />
-              Cheltenham,2026-03-12,14:30,Champion Hurdle,2m,Good to Firm,Grade 1
+            <p className="text-xs font-semibold text-muted-foreground mb-1">Combined format (one runner per row — races + runners created automatically):</p>
+            <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono leading-relaxed">
+              Racecourse · Date · Time · Horse Name · Jockey · Trainer<br />
+              Distance · Going · Class · Draw · Age · Weight · Form · Prize_Win
             </code>
           </div>
           <div>
-            <p className="text-xs font-semibold text-muted-foreground mb-1">Results example (CSV or spreadsheet columns):</p>
-            <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono">
-              racecard_id,horse_name,jockey,trainer,draw,weight,age,form,odds<br />
-              1,Constitution Hill,N Henderson,N Henderson,3,11-10,7,1111,6/4
+            <p className="text-xs font-semibold text-muted-foreground mb-1">Simple races-only format:</p>
+            <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono leading-relaxed">
+              venue (or Racecourse) · race_date (or Date) · race_time (or Time)<br />
+              race_name (or Race Type) · distance · going · class
+            </code>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-1">Results / runners format (requires racecard_id):</p>
+            <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono leading-relaxed">
+              racecard_id · horse_name (or Horse Name) · jockey · trainer · draw · weight
             </code>
           </div>
         </CardContent>
