@@ -21,7 +21,7 @@ import { Loader2, ChevronLeft, Save, Zap, RotateCcw, Plus, Trash2, Brain, Target
 import { useToast } from "@/hooks/use-toast";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { Link } from "wouter";
-import { runApexEngine, type ApexEngineResult, type HorseMemory } from "@/lib/apexEngine";
+import { runApexEngine, computeRaceVolatility, type ApexEngineResult, type HorseMemory, type RaceVolatilityResult, type VolatilityTier } from "@/lib/apexEngine";
 import { detectReplayTriggers, type DetectedTrigger } from "@/lib/replayTriggers";
 import type { HorseNote } from "@workspace/api-client-react";
 
@@ -394,6 +394,66 @@ function TotalScoreRing({ score }: { score: number }) {
   );
 }
 
+// ── Race Volatility Banner ────────────────────────────────────────────────────
+const TIER_STYLE: Record<VolatilityTier, { badge: string; bar: string; border: string }> = {
+  low:     { badge: "text-green-400 border-green-400/40 bg-green-400/10",   bar: "bg-green-500",  border: "border-green-500/20" },
+  medium:  { badge: "text-amber-400 border-amber-400/40 bg-amber-400/10",   bar: "bg-amber-500",  border: "border-amber-500/20" },
+  high:    { badge: "text-orange-400 border-orange-400/40 bg-orange-400/10", bar: "bg-orange-500", border: "border-orange-500/20" },
+  extreme: { badge: "text-red-400 border-red-400/40 bg-red-400/10",         bar: "bg-red-500",    border: "border-red-500/20" },
+};
+
+function RaceVolatilityBanner({ rv }: { rv: RaceVolatilityResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const s = TIER_STYLE[rv.tier];
+  const pct = rv.score;
+
+  return (
+    <div className={`rounded-lg border ${s.border} bg-secondary/30 overflow-hidden`}>
+      <button
+        className="w-full flex items-center justify-between gap-3 px-3 py-2.5"
+        onClick={() => setExpanded(e => !e)}
+        data-testid="volatility-banner-toggle"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex flex-col gap-0.5 shrink-0 w-20">
+            <div className="h-1.5 bg-secondary rounded-full overflow-hidden w-full">
+              <div className={`h-full rounded-full ${s.bar} transition-all duration-700`} style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-[10px] font-mono text-muted-foreground">{pct}/100</span>
+          </div>
+          <div className="min-w-0">
+            <span className={`text-xs font-semibold ${s.badge.split(" ")[0]}`}>Race Volatility:</span>
+            <span className={`ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded border ${s.badge}`}>{rv.label}</span>
+            {rv.blockedClasses.length > 0 && (
+              <span className="ml-2 text-[10px] text-muted-foreground/70">
+                {rv.blockedClasses.length} classification{rv.blockedClasses.length > 1 ? "s" : ""} capped
+              </span>
+            )}
+          </div>
+        </div>
+        {expanded
+          ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2 border-t border-border/30 pt-2">
+          <p className="text-xs text-muted-foreground/80 leading-snug">{rv.governanceNote}</p>
+          {rv.factors.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {rv.factors.map((f, i) => (
+                <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/60 text-muted-foreground border border-border/40">
+                  {f}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function buildMemoryFromNotes(notes: HorseNote[]): HorseMemory {
   const join = (type: string) =>
@@ -470,6 +530,7 @@ export default function ScoreEditor() {
   const [contextualIntelligence, setContextualIntelligence] = useState("");
   const [scoreNotes, setScoreNotes] = useState<Record<string, string>>({});
   const [classificationNote, setClassificationNote] = useState("");
+  const [raceVolatility, setRaceVolatility] = useState<RaceVolatilityResult | null>(null);
   const [autoScored, setAutoScored] = useState(false);
   const [initialised, setInitialised] = useState(false);
 
@@ -514,6 +575,7 @@ export default function ScoreEditor() {
     });
     setConfidenceClass(result.confidenceClass);
     setClassificationNote(result.classificationNote);
+    setRaceVolatility(result.raceVolatility);
     setScoreNotes({
       abilityScore: result.ability.note,
       paceFitScore: result.paceFit.note,
@@ -671,6 +733,9 @@ export default function ScoreEditor() {
         </Button>
       </div>
 
+      {/* ── Race Volatility Governance ── */}
+      {raceVolatility && <RaceVolatilityBanner rv={raceVolatility} />}
+
       {/* ── Classification note ── */}
       {classificationNote && (
         <div className={`px-3 py-2 rounded-lg border-l-2 text-xs ${confInfo.color}`}>
@@ -720,29 +785,48 @@ export default function ScoreEditor() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-2">
-            {CONFIDENCE_CLASSES.map(c => (
-              <button
-                key={c.value}
-                onClick={() => setConfidenceClass(c.value)}
-                data-testid={`option-${c.value}`}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all text-left ${
-                  confidenceClass === c.value
-                    ? `${c.color} ring-1 ring-current`
-                    : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground"
-                }`}
-              >
-                <div className={`w-2 h-2 rounded-full shrink-0 ${
-                  confidenceClass === c.value ? "bg-current" : "bg-muted-foreground/30"
-                }`} />
-                {c.label}
-                {confidenceClass === c.value && classificationNote && (
-                  <span className="text-xs font-normal opacity-70 ml-auto hidden sm:block truncate max-w-[200px]">
-                    Engine suggestion
-                  </span>
-                )}
-              </button>
-            ))}
+            {CONFIDENCE_CLASSES.map(c => {
+              const isBlocked = raceVolatility?.blockedClasses.includes(c.value) ?? false;
+              const isSelected = confidenceClass === c.value;
+              return (
+                <button
+                  key={c.value}
+                  onClick={() => !isBlocked && setConfidenceClass(c.value)}
+                  data-testid={`option-${c.value}`}
+                  title={isBlocked ? `${raceVolatility?.label}: this classification is capped for this race` : undefined}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all text-left relative ${
+                    isBlocked
+                      ? "border-border/20 text-muted-foreground/30 bg-secondary/10 cursor-not-allowed opacity-40"
+                      : isSelected
+                        ? `${c.color} ring-1 ring-current`
+                        : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground"
+                  }`}
+                >
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${
+                    isBlocked ? "bg-muted-foreground/20" : isSelected ? "bg-current" : "bg-muted-foreground/30"
+                  }`} />
+                  {c.label}
+                  {isBlocked && (
+                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-border/30 text-muted-foreground/40 flex items-center gap-1 shrink-0">
+                      <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                      Capped
+                    </span>
+                  )}
+                  {!isBlocked && isSelected && classificationNote && (
+                    <span className="text-xs font-normal opacity-70 ml-auto hidden sm:block truncate max-w-[200px]">
+                      Engine suggestion
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
+          {raceVolatility && raceVolatility.blockedClasses.length > 0 && (
+            <p className="mt-2 text-[10px] text-muted-foreground/50 flex items-center gap-1">
+              <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {raceVolatility.label} — some classifications blocked by race environment governance
+            </p>
+          )}
         </CardContent>
       </Card>
 

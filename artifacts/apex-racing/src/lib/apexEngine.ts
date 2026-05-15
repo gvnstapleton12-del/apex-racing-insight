@@ -36,6 +36,17 @@ export interface ScoreBreakdown {
   note: string;
 }
 
+export type VolatilityTier = "low" | "medium" | "high" | "extreme";
+
+export interface RaceVolatilityResult {
+  score: number;
+  tier: VolatilityTier;
+  label: string;
+  factors: string[];
+  blockedClasses: string[];
+  governanceNote: string;
+}
+
 export interface ApexEngineResult {
   ability: ScoreBreakdown;
   paceFit: ScoreBreakdown;
@@ -47,6 +58,7 @@ export interface ApexEngineResult {
   totalScore: number;
   confidenceClass: string;
   classificationNote: string;
+  raceVolatility: RaceVolatilityResult;
 }
 
 function clamp(v: number, lo = 0, hi = 100): number {
@@ -601,17 +613,153 @@ function computeTotal(a: number, pf: number, tr: number, gt: number, ri: number,
   return Math.max(0, Math.min(100, Math.round(weighted * 10) / 10));
 }
 
+// ── Race Environment Volatility ───────────────────────────────────────────────
+
+export function computeRaceVolatility(racecard: RacecardInput): RaceVolatilityResult {
+  let score = 0;
+  const factors: string[] = [];
+  const name = racecard.raceName.toLowerCase();
+  const going = (racecard.going ?? "").toLowerCase();
+  const profile = (racecard.trackProfile ?? "").toLowerCase();
+  const fieldSize = racecard.fieldSize;
+  const furlongs = distanceFurlongs(racecard.distance);
+  const cls = raceClassNum(racecard.raceClass);
+  const nrCount = (racecard.nonRunners ?? "").split(",").filter(s => s.trim().length > 0).length;
+
+  // ── Field size ──────────────────────────────────────────────────────────────
+  if (fieldSize >= 20) { score += 40; factors.push(`${fieldSize}-runner field (maximum chaos)`); }
+  else if (fieldSize >= 16) { score += 30; factors.push(`${fieldSize}-runner field (large)`); }
+  else if (fieldSize >= 12) { score += 20; factors.push(`${fieldSize}-runner field (above average)`); }
+  else if (fieldSize >= 8)  { score += 10; }
+  else if (fieldSize <= 5)  { score -= 5; factors.push("small field (reduced chaos)"); }
+
+  // ── Race type ───────────────────────────────────────────────────────────────
+  const isHandicap = name.includes("handicap") || name.includes("hcap");
+  const isMaiden   = name.includes("maiden") || name.includes("novice");
+  const isSelling  = name.includes("selling") || name.includes("claimer") || name.includes("claiming");
+  const isJump     = name.includes("chase") || name.includes("hurdle") || name.includes("national hunt");
+  const isGroup    = name.includes("group") || name.includes("listed") || name.includes("grade");
+  const isConditions = name.includes("conditions") || name.includes("stakes") || (isGroup);
+
+  if (isGroup)       { score -= 8;  factors.push("Group/Listed race (high quality, lower chaos)"); }
+  else if (isConditions) { score -= 4; }
+  else if (isSelling){ score += 18; factors.push("Selling/Claiming (unpredictable market)"); }
+  else if (isMaiden) { score += 14; factors.push("Maiden/Novice (inexperienced field)"); }
+  else if (isHandicap && fieldSize >= 14) { score += 22; factors.push("Large-field handicap (maximum chaos)"); }
+  else if (isHandicap) { score += 10; factors.push("Handicap race"); }
+  if (isJump)        { score += 14; factors.push("Jump race (incident risk)"); }
+
+  // ── Going / surface ─────────────────────────────────────────────────────────
+  if (going.includes("heavy")) { score += 22; factors.push("Heavy going (stamina lottery)"); }
+  else if (going.includes("soft")) { score += 14; factors.push("Soft going (stamina variance)"); }
+  else if (going.includes("yielding")) { score += 10; }
+  else if (going.includes("good to soft") || going.includes("good/soft")) { score += 6; }
+  else if (going.includes("firm") || going.includes("hard")) { score += 10; factors.push("Fast/Firm surface (pace explosion risk)"); }
+  else if (going.includes("good")) { score -= 4; factors.push("Good ground (optimal, stable)"); }
+
+  // ── Pace instability (from track profile) ──────────────────────────────────
+  if (profile.includes("pace collapse") || profile.includes("false pace")) {
+    score += 28; factors.push("Track profile: pace collapse / false pace flagged");
+  } else if (profile.includes("slow pace") || profile.includes("slow early")) {
+    score += 20; factors.push("Track profile: slow pace expected");
+  } else if (profile.includes("multiple pace") || profile.includes("two pace") || profile.includes("pace duel")) {
+    score += 18; factors.push("Track profile: multiple pace setters / pace duel");
+  } else if (profile.includes("strong pace") || profile.includes("fast pace")) {
+    score += 5;
+  } else if (profile.includes("rail bias") || profile.includes("draw bias")) {
+    score += 12; factors.push("Track profile: draw/rail bias noted");
+  }
+
+  // ── Draw chaos ──────────────────────────────────────────────────────────────
+  if (furlongs !== null && furlongs <= 7) {
+    if (fieldSize >= 16) { score += 25; factors.push("Sprint with large field (draw chaos)"); }
+    else if (fieldSize >= 12) { score += 15; factors.push("Sprint with sizeable field (draw bias)"); }
+    else { score += 8; factors.push("Sprint race (draw factor)"); }
+  }
+
+  // ── Tactical randomness ─────────────────────────────────────────────────────
+  if (furlongs !== null) {
+    if (furlongs >= 20) { score += 18; factors.push("Marathon distance (extreme stamina test)"); }
+    else if (furlongs >= 16) { score += 12; factors.push("Staying trip (stamina uncertainty)"); }
+  }
+
+  // ── Non-runners ─────────────────────────────────────────────────────────────
+  if (nrCount >= 4) { score += 14; factors.push(`${nrCount} non-runners (field changed significantly)`); }
+  else if (nrCount >= 2) { score += 8; factors.push(`${nrCount} non-runners (field altered)`); }
+
+  // ── Race class ──────────────────────────────────────────────────────────────
+  if (cls !== null) {
+    if (cls >= 5) { score += 10; factors.push(`Class ${cls} (lower grade — open form)`); }
+    else if (cls <= 2) { score -= 6; factors.push(`Class ${cls} (elite — predictable form lines)`); }
+  }
+
+  // ── Market context signals ──────────────────────────────────────────────────
+  const mktCtx = (racecard.marketContext ?? "").toLowerCase();
+  if (mktCtx.includes("open market") || mktCtx.includes("wide open")) {
+    score += 12; factors.push("Market context: open race");
+  }
+  if (mktCtx.includes("market mover") || mktCtx.includes("backed") || mktCtx.includes("gamble")) {
+    score += 6; factors.push("Market context: significant market moves");
+  }
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+
+  let tier: VolatilityTier;
+  let label: string;
+  let blockedClasses: string[];
+  let governanceNote: string;
+
+  if (finalScore >= 65) {
+    tier = "extreme";
+    label = "Extreme Volatility";
+    blockedClasses = ["best_of_day", "top_rated_high_variance"];
+    governanceNote = `Race environment score ${finalScore}/100 — highly unpredictable. Best Of Day and Top Rated / High Variance classifications are blocked. Only Hidden Value, Replay Upgrade, or No Bet permitted.`;
+  } else if (finalScore >= 45) {
+    tier = "high";
+    label = "High Volatility";
+    blockedClasses = ["best_of_day"];
+    governanceNote = `Race environment score ${finalScore}/100 — chaotic field. Best Of Day classification is blocked. Top Rated / High Variance is the maximum available confidence.`;
+  } else if (finalScore >= 25) {
+    tier = "medium";
+    label = "Medium Volatility";
+    blockedClasses = [];
+    governanceNote = `Race environment score ${finalScore}/100 — moderate unpredictability. Best Of Day requires a total score of 73+.`;
+  } else {
+    tier = "low";
+    label = "Low Volatility";
+    blockedClasses = [];
+    governanceNote = `Race environment score ${finalScore}/100 — stable field. All confidence classifications available.`;
+  }
+
+  return { score: finalScore, tier, label, factors, blockedClasses, governanceNote };
+}
+
+// ── Classification with governance ───────────────────────────────────────────
+
 function classifyScore(
   total: number,
   ability: number,
   hidden: number,
   replay: number,
-  volatility: number
+  volatility: number,
+  raceVolatility: RaceVolatilityResult
 ): { cls: string; note: string } {
-  if (total >= 72 && volatility <= 42) {
+  const blocked = raceVolatility.blockedClasses;
+  const minBestOfDay = raceVolatility.tier === "medium" ? 73 : 72;
+
+  const allow = (cls: string) => !blocked.includes(cls);
+
+  if (total >= minBestOfDay && volatility <= 42 && allow("best_of_day")) {
     return { cls: "best_of_day", note: `Strong composite score (${total}) with controlled volatility (${volatility}) — highest confidence selection` };
   }
-  if (total >= 65 && volatility > 48) {
+  // Would have been best_of_day but race governance blocks it
+  if (total >= minBestOfDay && !allow("best_of_day") && allow("top_rated_high_variance")) {
+    return { cls: "top_rated_high_variance", note: `Score ${total} qualifies for Best Of Day but ${raceVolatility.label} blocks it — capped at Top Rated / High Variance` };
+  }
+  if (total >= minBestOfDay && !allow("best_of_day") && !allow("top_rated_high_variance")) {
+    return { cls: "no_bet", note: `Score ${total} qualifies for Best Of Day but ${raceVolatility.label} blocks both top classifications` };
+  }
+  if (total >= 65 && volatility > 48 && allow("top_rated_high_variance")) {
     return { cls: "top_rated_high_variance", note: `High ability score (${ability}) but elevated volatility (${volatility}) — capable but unpredictable` };
   }
   if (hidden >= 70 && total >= 50) {
@@ -620,8 +768,11 @@ function classifyScore(
   if (replay >= 70 && total >= 50) {
     return { cls: "replay_upgrade", note: `Replay Intelligence score (${replay}) suggests performance better than form shows` };
   }
-  if (total >= 60 && volatility <= 50) {
+  if (total >= 60 && volatility <= 50 && allow("best_of_day")) {
     return { cls: "best_of_day", note: `Solid all-round score (${total}) — reliable selection candidate` };
+  }
+  if (total >= 60 && !allow("best_of_day") && allow("top_rated_high_variance")) {
+    return { cls: "top_rated_high_variance", note: `Score ${total} capped by ${raceVolatility.label} — race environment limits confidence` };
   }
   return { cls: "no_bet", note: `Total score ${total} — insufficient evidence for a confident selection` };
 }
@@ -634,6 +785,7 @@ export function runApexEngine(runner: RunnerInput, racecard: RacecardInput): Ape
   const replayIntelligence = scoreReplayIntelligence(runner, racecard);
   const hiddenValue = scoreHiddenValue(runner, racecard);
   const volatilityRisk = scoreVolatilityRisk(runner, racecard);
+  const raceVolatility = computeRaceVolatility(racecard);
 
   const totalScore = computeTotal(
     ability.score, paceFit.score, tacticalResilience.score,
@@ -641,7 +793,8 @@ export function runApexEngine(runner: RunnerInput, racecard: RacecardInput): Ape
   );
 
   const { cls, note: classificationNote } = classifyScore(
-    totalScore, ability.score, hiddenValue.score, replayIntelligence.score, volatilityRisk.score
+    totalScore, ability.score, hiddenValue.score, replayIntelligence.score,
+    volatilityRisk.score, raceVolatility
   );
 
   return {
@@ -655,5 +808,6 @@ export function runApexEngine(runner: RunnerInput, racecard: RacecardInput): Ape
     totalScore,
     confidenceClass: cls,
     classificationNote,
+    raceVolatility,
   };
 }

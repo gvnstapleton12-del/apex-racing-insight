@@ -22,6 +22,7 @@ import { Loader2, Plus, Trash2, ChevronLeft, Edit2, Save, X, Youtube, Film } fro
 import { useToast } from "@/hooks/use-toast";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { detectReplayTriggers, type DetectedTrigger } from "@/lib/replayTriggers";
+import { computeRaceVolatility, type RaceVolatilityResult } from "@/lib/apexEngine";
 
 function ReplayTriggerBadges({ triggers }: { triggers: DetectedTrigger[] }) {
   if (triggers.length === 0) return null;
@@ -163,6 +164,26 @@ export default function RacecardDetail() {
 
   const { racecard, runners } = analysis;
 
+  const raceVolatility: RaceVolatilityResult = computeRaceVolatility({
+    raceName: racecard.raceName,
+    distance: racecard.distance,
+    going: racecard.going,
+    raceClass: racecard.raceClass,
+    prize: racecard.prize,
+    trackProfile: racecard.trackProfile,
+    marketContext: racecard.marketContext,
+    trainerComments: racecard.trainerComments,
+    nonRunners: racecard.nonRunners,
+    fieldSize: runners.filter(r => !r.isNonRunner && !r.scratched).length || 1,
+  });
+
+  const VOLATILITY_BADGE_STYLE: Record<string, string> = {
+    low:     "border-green-500/40 text-green-400 bg-green-500/10",
+    medium:  "border-amber-500/40 text-amber-400 bg-amber-500/10",
+    high:    "border-orange-500/40 text-orange-400 bg-orange-500/10",
+    extreme: "border-red-500/40 text-red-400 bg-red-500/10",
+  };
+
   const EditableField = ({ field, value, multiline = false }: { field: string; value: string | null; multiline?: boolean }) => {
     if (editField === field) {
       return (
@@ -231,6 +252,14 @@ export default function RacecardDetail() {
             <Badge variant="outline" className="text-xs">{racecard.going}</Badge>
             <Badge variant="outline" className="text-xs">{racecard.raceClass}</Badge>
             {racecard.prize && <Badge variant="outline" className="text-xs">{racecard.prize}</Badge>}
+            <Badge
+              variant="outline"
+              className={`text-xs font-semibold ${VOLATILITY_BADGE_STYLE[raceVolatility.tier]}`}
+              title={raceVolatility.governanceNote}
+              data-testid="race-volatility-badge"
+            >
+              {raceVolatility.label} · {raceVolatility.score}/100
+            </Badge>
           </div>
         </div>
         {analysis.topPick && (
