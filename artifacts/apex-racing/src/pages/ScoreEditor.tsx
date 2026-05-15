@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { Link } from "wouter";
 import { runApexEngine, type ApexEngineResult, type HorseMemory } from "@/lib/apexEngine";
+import { detectReplayTriggers, type DetectedTrigger } from "@/lib/replayTriggers";
 import type { HorseNote } from "@workspace/api-client-react";
 
 // ── Note type config ─────────────────────────────────────────────────────────
@@ -622,6 +623,28 @@ export default function ScoreEditor() {
               </Badge>
             )}
           </div>
+          {/* Replay trigger badges */}
+          {(() => {
+            const triggers = detectReplayTriggers(
+              { form: runner.form, odds: runner.odds, age: runner.age },
+              { fieldSize: activeRunners || 10, raceName: racecard.raceName }
+            );
+            if (triggers.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {triggers.map((t: DetectedTrigger) => (
+                  <span
+                    key={t.key}
+                    title={t.reason}
+                    className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border leading-none cursor-default select-none ${t.color}`}
+                  >
+                    <Film className="h-2.5 w-2.5 shrink-0" />
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

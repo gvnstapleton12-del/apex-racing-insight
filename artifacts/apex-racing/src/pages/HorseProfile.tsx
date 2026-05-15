@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Loader2, ChevronLeft, Plus, Trash2, Edit2, Save, X, BookOpen } from "lucide-react";
+import { Loader2, ChevronLeft, Plus, Trash2, Edit2, Save, X, BookOpen, Film } from "lucide-react";
+import { detectTriggersFromNoteContent, type DetectedTrigger } from "@/lib/replayTriggers";
 import { useToast } from "@/hooks/use-toast";
 
 const NOTE_TYPES = [
@@ -166,7 +167,7 @@ export default function HorseProfile() {
       </div>
 
       <div className="flex items-start justify-between">
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">{horse.name}</h1>
           <div className="flex flex-wrap gap-2 mt-2">
             {horse.trainer && <Badge variant="outline" className="text-xs">{horse.trainer}</Badge>}
@@ -181,6 +182,29 @@ export default function HorseProfile() {
               }`}>{horse.volatilityRating} volatility</Badge>
             )}
           </div>
+          {/* Replay triggers derived from stored notes */}
+          {(() => {
+            const replayNoteContents = (notes ?? [])
+              .filter(n => n.noteType === "replay" || n.noteType === "replay_trigger")
+              .map(n => n.content);
+            const allNoteContents = (notes ?? []).map(n => n.content);
+            const triggers = detectTriggersFromNoteContent([...replayNoteContents, ...allNoteContents]);
+            if (triggers.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {triggers.map((t: DetectedTrigger) => (
+                  <span
+                    key={t.key}
+                    title={t.reason}
+                    className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border leading-none cursor-default select-none ${t.color}`}
+                  >
+                    <Film className="h-2.5 w-2.5 shrink-0" />
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
         <div className="text-right flex gap-6 text-sm">
           {horse.totalRuns != null && (
@@ -232,7 +256,7 @@ export default function HorseProfile() {
             <CardTitle className="text-xs font-semibold text-muted-foreground tracking-widest uppercase">{label}</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <EditableField field={field} value={(horse as Record<string, string | null>)[field] ?? null} multiline placeholder="Click to add analysis..." />
+            <EditableField field={field} value={(horse as unknown as Record<string, string | null>)[field] ?? null} multiline placeholder="Click to add analysis..." />
           </CardContent>
         </Card>
       ))}
@@ -324,7 +348,7 @@ export default function HorseProfile() {
                           {note.raceRef && <span>{note.raceRef}</span>}
                           {note.venue && <span>{note.venue}</span>}
                           {note.date && <span>{note.date}</span>}
-                          <span>{new Date(note.createdAt).toLocaleDateString()}</span>
+                          {note.createdAt && <span>{new Date(note.createdAt).toLocaleDateString()}</span>}
                         </div>
                       </div>
                     ))}

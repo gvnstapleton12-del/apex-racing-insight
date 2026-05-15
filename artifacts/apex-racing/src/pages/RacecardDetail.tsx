@@ -18,9 +18,28 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Plus, Trash2, ChevronLeft, Edit2, Save, X, Youtube } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronLeft, Edit2, Save, X, Youtube, Film } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
+import { detectReplayTriggers, type DetectedTrigger } from "@/lib/replayTriggers";
+
+function ReplayTriggerBadges({ triggers }: { triggers: DetectedTrigger[] }) {
+  if (triggers.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {triggers.map(t => (
+        <span
+          key={t.key}
+          title={t.reason}
+          className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border leading-none cursor-default select-none ${t.color}`}
+        >
+          <Film className="h-2.5 w-2.5 shrink-0" />
+          {t.label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const runnerSchema = z.object({
   horseName: z.string().min(1),
@@ -345,14 +364,27 @@ export default function RacecardDetail() {
                     </div>
                   </div>
 
-                  {/* Form */}
-                  {runner.form && (
-                    <div className="px-3 pb-2">
-                      <span className="text-xs font-mono text-muted-foreground bg-secondary/50 rounded px-2 py-0.5">
-                        {runner.form}
-                      </span>
-                    </div>
-                  )}
+                  {/* Form + replay trigger badges */}
+                  {(() => {
+                    const activeCount = (analysis.runners ?? []).filter(r => !r.isNonRunner && !r.scratched).length;
+                    const triggers = detectReplayTriggers(
+                      { form: runner.form, odds: runner.odds, age: runner.age },
+                      { fieldSize: activeCount, raceName: racecard.raceName }
+                    );
+                    if (!runner.form && triggers.length === 0) return null;
+                    return (
+                      <div className="px-3 pb-2 space-y-1.5">
+                        {runner.form && (
+                          <div>
+                            <span className="text-xs font-mono text-muted-foreground bg-secondary/50 rounded px-2 py-0.5">
+                              {runner.form}
+                            </span>
+                          </div>
+                        )}
+                        <ReplayTriggerBadges triggers={triggers} />
+                      </div>
+                    );
+                  })()}
 
                   {/* APEX score bars */}
                   {score && (
