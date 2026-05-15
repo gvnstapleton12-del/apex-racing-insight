@@ -8,13 +8,19 @@ import {
   getGetDashboardSummaryQueryKey,
   getGetRacecardAnalysisQueryKey,
 } from "@workspace/api-client-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Trophy, Eye, Film, Ban, ChevronRight, Zap, TrendingUp, Star } from "lucide-react";
-import { runApexEngine, computeRaceVolatility, type RaceVolatilityResult, type VolatilityTier } from "@/lib/apexEngine";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Loader2, Trophy, Eye, Film, Ban, ChevronRight,
+  Zap, Star, TrendingUp, ShieldAlert,
+} from "lucide-react";
+import {
+  runApexEngine, computeRaceVolatility,
+  type RaceVolatilityResult, type VolatilityTier,
+} from "@/lib/apexEngine";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface RacePick {
+interface ScoredPick {
   racecardId: number;
   venue: string;
   raceTime: string;
@@ -23,9 +29,25 @@ interface RacePick {
   odds?: string | null;
   confidenceClass: string;
   reason: string;
+  totalScore: number;
+  categoryScore: number;
+}
+
+interface AvoidEntry {
+  racecardId: number;
+  venue: string;
+  raceTime: string;
+  raceName: string;
   volatility: RaceVolatilityResult;
-  noBetRace: boolean;
   runnerCount: number;
+}
+
+interface DayBoard {
+  betsOfDay:     ScoredPick[];
+  eachWayValue:  ScoredPick[];
+  replayUpgrades: ScoredPick[];
+  hiddenValue:   ScoredPick[];
+  avoidRaces:    AvoidEntry[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -33,206 +55,237 @@ interface RacePick {
 const todayStr = new Date().toISOString().slice(0, 10);
 
 const TIER_COLOR: Record<VolatilityTier, string> = {
-  low:     "text-green-400",
-  medium:  "text-amber-400",
-  high:    "text-orange-400",
-  extreme: "text-red-400",
+  low: "text-green-400", medium: "text-amber-400",
+  high: "text-orange-400", extreme: "text-red-400",
 };
 
-// ── Compute picks for a single race ──────────────────────────────────────────
+const CONF_STYLE: Record<string, { chip: string; label: string }> = {
+  best_of_day:             { chip: "bg-amber-400/15 text-amber-300 border-amber-400/30",     label: "Best Of Day"   },
+  top_rated_high_variance: { chip: "bg-blue-400/15 text-blue-300 border-blue-400/30",        label: "High Variance" },
+  hidden_value:            { chip: "bg-emerald-400/15 text-emerald-300 border-emerald-400/30", label: "Hidden Value" },
+  replay_upgrade:          { chip: "bg-purple-400/15 text-purple-300 border-purple-400/30",  label: "Replay Upgrade"},
+  each_way_value:          { chip: "bg-teal-400/15 text-teal-300 border-teal-400/30",        label: "EW Value"      },
+  no_bet:                  { chip: "bg-muted/20 text-muted-foreground/50 border-border/30",   label: "No Bet"        },
+};
 
-function computeRacePicks(racecard: {
-  id: number; venue: string; raceTime: string; raceName: string;
-  distance?: string | null; going?: string | null; raceClass?: string | null;
-  prize?: string | null; trackProfile?: string | null; marketContext?: string | null;
-  trainerComments?: string | null; nonRunners?: string | null;
-}, runners: Array<{
+// ── Parse odds decimal ────────────────────────────────────────────────────────
+
+function parseOddsDecimal(odds: string | null | undefined): number | null {
+  if (!odds) return null;
+  const s = odds.trim().toLowerCase();
+  if (s === "evs" || s === "evens") return 2.0;
+  const sl = s.indexOf("/");
+  if (sl !== -1) {
+    const n = parseFloat(s.slice(0, sl)), d = parseFloat(s.slice(sl + 1));
+    if (!isNaN(n) && !isNaN(d) && d > 0) return n / d + 1;
+  }
+  const dec = parseFloat(s);
+  if (!isNaN(dec)) return dec;
+  return null;
+}
+
+// ── Compute board entries for one race ───────────────────────────────────────
+
+type RunnerRow = {
   id: number; horseName: string; draw?: number | null; age?: string | null;
   form?: string | null; odds?: string | null; jockey?: string | null;
   trainer?: string | null; weight?: string | null;
   isNonRunner?: boolean | null; scratched?: boolean | null;
-}>): {
-  topRated: RacePick;
-  bestOfDay?: RacePick;
-  hiddenValue?: RacePick;
-  replayUpgrade?: RacePick;
-  volatility: RaceVolatilityResult;
-  noBetRace: boolean;
-} | null {
+};
+
+type RacecardRow = {
+  id: number; venue: string; raceTime: string; raceName: string;
+  distance?: string | null; going?: string | null; raceClass?: string | null;
+  prize?: string | null; trackProfile?: string | null; marketContext?: string | null;
+  trainerComments?: string | null; nonRunners?: string | null;
+};
+
+function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
+  betsOfDay: ScoredPick[]; eachWayValue: ScoredPick[];
+  replayUpgrades: ScoredPick[]; hiddenValue: ScoredPick[];
+  avoid?: AvoidEntry;
+} {
   const active = runners.filter(r => !r.isNonRunner && !r.scratched);
-  if (active.length === 0) return null;
+  const empty = { betsOfDay: [], eachWayValue: [], replayUpgrades: [], hiddenValue: [] };
+  if (active.length === 0) return empty;
 
   const racecardInput = {
-    raceName: racecard.raceName,
-    distance: racecard.distance ?? null,
-    going: racecard.going ?? null,
-    raceClass: racecard.raceClass ?? null,
-    prize: racecard.prize ?? null,
-    trackProfile: racecard.trackProfile ?? null,
-    marketContext: racecard.marketContext ?? null,
-    trainerComments: racecard.trainerComments ?? null,
-    nonRunners: racecard.nonRunners ?? null,
+    raceName: rc.raceName,
+    distance: rc.distance ?? null, going: rc.going ?? null,
+    raceClass: rc.raceClass ?? null, prize: rc.prize ?? null,
+    trackProfile: rc.trackProfile ?? null, marketContext: rc.marketContext ?? null,
+    trainerComments: rc.trainerComments ?? null, nonRunners: rc.nonRunners ?? null,
     fieldSize: active.length,
   };
 
   const volatility = computeRaceVolatility(racecardInput);
-  const allNoBet = volatility.tier === "extreme";
 
-  const scored = active
-    .map(r => ({
-      runner: r,
-      result: runApexEngine(
-        { horseName: r.horseName, draw: r.draw, age: r.age, form: r.form,
-          odds: r.odds, jockey: r.jockey, trainer: r.trainer, weight: r.weight },
-        racecardInput,
-      ),
-    }))
-    .sort((a, b) => b.result.totalScore - a.result.totalScore);
+  if (volatility.tier === "extreme") {
+    return {
+      ...empty,
+      avoid: { racecardId: rc.id, venue: rc.venue, raceTime: rc.raceTime, raceName: rc.raceName, volatility, runnerCount: active.length },
+    };
+  }
 
-  const fieldAvg = scored.reduce((s, e) => s + e.result.totalScore, 0) / scored.length;
+  const scored = active.map(r => ({
+    runner: r,
+    result: runApexEngine(
+      { horseName: r.horseName, draw: r.draw, age: r.age, form: r.form,
+        odds: r.odds, jockey: r.jockey, trainer: r.trainer, weight: r.weight },
+      racecardInput,
+    ),
+  })).sort((a, b) => b.result.totalScore - a.result.totalScore);
 
-  const toRacePick = (entry: typeof scored[0], confidenceOverride?: string): RacePick => ({
-    racecardId: racecard.id,
-    venue: racecard.venue,
-    raceTime: racecard.raceTime,
-    raceName: racecard.raceName,
-    horseName: entry.runner.horseName,
-    odds: entry.runner.odds,
-    confidenceClass: confidenceOverride ?? entry.result.confidenceClass,
+  const pick = (entry: typeof scored[0], confOverride?: string, catScore?: number): ScoredPick => ({
+    racecardId: rc.id, venue: rc.venue, raceTime: rc.raceTime, raceName: rc.raceName,
+    horseName: entry.runner.horseName, odds: entry.runner.odds,
+    confidenceClass: confOverride ?? entry.result.confidenceClass,
     reason: entry.result.classificationNote || entry.result.ability.note,
-    volatility,
-    noBetRace: allNoBet || entry.result.confidenceClass === "no_bet",
-    runnerCount: active.length,
+    totalScore: entry.result.totalScore,
+    categoryScore: catScore ?? entry.result.totalScore,
   });
 
-  const topRated    = toRacePick(scored[0]);
-  const bodEntry    = scored.find(e => e.result.confidenceClass === "best_of_day");
-  const hvEntry     = scored.find(e => e.result.confidenceClass === "hidden_value"
-    || (e.result.hiddenValue.score >= 62 && e.result.confidenceClass !== "no_bet"));
-  const replayEntry = scored.find(e => e.result.confidenceClass === "replay_upgrade");
+  const betsOfDay = scored
+    .filter(e => e.result.confidenceClass === "best_of_day")
+    .map(e => pick(e));
 
-  return {
-    topRated,
-    bestOfDay:    bodEntry    ? toRacePick(bodEntry, "best_of_day")     : undefined,
-    hiddenValue:  hvEntry     ? toRacePick(hvEntry, "hidden_value")      : undefined,
-    replayUpgrade:replayEntry ? toRacePick(replayEntry, "replay_upgrade") : undefined,
-    volatility,
-    noBetRace: allNoBet,
-  };
+  const replayUpgrades = scored
+    .filter(e => e.result.confidenceClass === "replay_upgrade")
+    .map(e => pick(e, undefined, e.result.replayIntelligence.score));
+
+  const hiddenValue = scored
+    .filter(e => e.result.hiddenValue.score >= 60 && e.result.confidenceClass !== "no_bet")
+    .sort((a, b) => b.result.hiddenValue.score - a.result.hiddenValue.score)
+    .map(e => pick(e, "hidden_value", e.result.hiddenValue.score));
+
+  // Each-way: HV score ≥ 58, odds ≥ 3.0 decimal (2/1+), not odds-on, field ≥ 5
+  const eachWayValue = active.length >= 5
+    ? scored
+        .filter(e => {
+          const dec = parseOddsDecimal(e.runner.odds);
+          return e.result.hiddenValue.score >= 58
+            && e.result.confidenceClass !== "no_bet"
+            && (dec === null || dec >= 3.0);
+        })
+        .sort((a, b) => b.result.hiddenValue.score - a.result.hiddenValue.score)
+        .map(e => pick(e, "each_way_value", e.result.hiddenValue.score))
+    : [];
+
+  return { betsOfDay, eachWayValue, replayUpgrades, hiddenValue };
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PickChip({ cls }: { cls: string }) {
-  const map: Record<string, string> = {
-    best_of_day:             "bg-amber-400/15 text-amber-300 border-amber-400/30",
-    top_rated_high_variance: "bg-blue-400/15 text-blue-300 border-blue-400/30",
-    hidden_value:            "bg-emerald-400/15 text-emerald-300 border-emerald-400/30",
-    replay_upgrade:          "bg-purple-400/15 text-purple-300 border-purple-400/30",
-    no_bet:                  "bg-muted/20 text-muted-foreground border-border/30",
-  };
-  const label: Record<string, string> = {
-    best_of_day: "Best Of Day", top_rated_high_variance: "High Variance",
-    hidden_value: "Hidden Value", replay_upgrade: "Replay Upgrade", no_bet: "No Bet",
-  };
+function ConfChip({ cls }: { cls: string }) {
+  const s = CONF_STYLE[cls] ?? CONF_STYLE.no_bet;
   return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${map[cls] ?? map.no_bet}`}>
-      {label[cls] ?? cls}
+    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${s.chip}`}>
+      {s.label}
     </span>
   );
 }
 
-function BetOfDayCard({ pick }: { pick: RacePick }) {
+function BoardRow({ pick, rank }: { pick: ScoredPick; rank: number }) {
   return (
     <Link href={`/racecards/${pick.racecardId}`}>
-      <div className="group relative overflow-hidden rounded-xl border border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-amber-400/5 to-transparent p-5 cursor-pointer hover:border-amber-500/70 transition-all duration-200">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/5 rounded-full -translate-y-16 translate-x-16" />
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2 min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <Trophy className="h-4 w-4 text-amber-400 shrink-0" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Bet Of The Day</span>
-              <PickChip cls="best_of_day" />
-            </div>
-            <div className="text-2xl font-bold leading-tight text-foreground">{pick.horseName}</div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-primary">{pick.venue}</span>
-              <span className="text-muted-foreground text-sm">·</span>
-              <span className="text-sm font-mono text-muted-foreground">{pick.raceTime}</span>
-              {pick.odds && <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">{pick.odds}</span>}
-            </div>
-            <p className="text-xs text-muted-foreground/70 leading-relaxed max-w-prose">{pick.reason}</p>
+      <div className="group flex items-center gap-3 px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer border-b border-border/15 last:border-0">
+        {/* Rank */}
+        <span className="text-xs font-bold font-mono text-muted-foreground/40 w-5 shrink-0 text-right">
+          {rank}
+        </span>
+
+        {/* Horse + meta */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm leading-tight">{pick.horseName}</span>
+            {pick.odds && (
+              <span className="text-[11px] font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">{pick.odds}</span>
+            )}
+            <ConfChip cls={pick.confidenceClass} />
           </div>
-          <ChevronRight className="h-5 w-5 text-amber-400/40 group-hover:text-amber-400 transition-colors mt-1 shrink-0" />
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function PickCard({ pick, type }: { pick: RacePick; type: "value" | "replay" | "rated" }) {
-  const config = {
-    value:  { icon: <Eye className="h-3.5 w-3.5" />,   label: "Value Bet",       border: "border-emerald-500/35 hover:border-emerald-500/60", bg: "bg-emerald-500/5",  accent: "text-emerald-400",  cls: "hidden_value"   },
-    replay: { icon: <Film className="h-3.5 w-3.5" />,   label: "Replay Upgrade",  border: "border-purple-500/35 hover:border-purple-500/60",  bg: "bg-purple-500/5",   accent: "text-purple-400",   cls: "replay_upgrade" },
-    rated:  { icon: <Star className="h-3.5 w-3.5" />,   label: "Top Rated",       border: "border-blue-500/35 hover:border-blue-500/60",      bg: "bg-blue-500/5",     accent: "text-blue-400",     cls: "top_rated_high_variance" },
-  }[type];
-
-  return (
-    <Link href={`/racecards/${pick.racecardId}`}>
-      <div className={`group rounded-xl border p-4 cursor-pointer transition-all duration-200 h-full ${config.border} ${config.bg}`}>
-        <div className="flex items-center gap-1.5 mb-3">
-          <span className={config.accent}>{config.icon}</span>
-          <span className={`text-[10px] font-bold uppercase tracking-widest ${config.accent}`}>{config.label}</span>
-        </div>
-        <div className="font-bold text-lg leading-tight mb-1">{pick.horseName}</div>
-        <div className="flex items-center gap-1.5 mb-2">
-          <span className="text-xs font-semibold text-primary">{pick.venue}</span>
-          <span className="text-muted-foreground text-xs">·</span>
-          <span className="text-xs font-mono text-muted-foreground">{pick.raceTime}</span>
-          {pick.odds && <span className="text-[11px] font-mono font-semibold text-primary">{pick.odds}</span>}
-        </div>
-        <p className="text-[11px] text-muted-foreground/60 leading-snug line-clamp-2">{pick.reason}</p>
-        <div className="mt-2.5 flex items-center justify-between">
-          <PickChip cls={config.cls} />
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors" />
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function AvoidRow({ pick }: { pick: RacePick }) {
-  return (
-    <Link href={`/racecards/${pick.racecardId}`}>
-      <div className="group flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-secondary/30 transition-colors cursor-pointer">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Ban className="h-3.5 w-3.5 text-red-400/60 shrink-0" />
-          <div className="min-w-0">
-            <span className="text-sm font-medium">{pick.venue}</span>
-            <span className="text-muted-foreground text-sm mx-1.5">·</span>
-            <span className="text-sm font-mono text-muted-foreground">{pick.raceTime}</span>
-            <span className="text-muted-foreground text-sm mx-1.5">—</span>
-            <span className="text-xs text-muted-foreground/70 truncate">{pick.raceName}</span>
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            <span className="text-xs font-semibold text-muted-foreground/80">{pick.venue}</span>
+            <span className="text-muted-foreground/40 text-xs">·</span>
+            <span className="text-xs font-mono text-muted-foreground/60">{pick.raceTime}</span>
+            {pick.reason && (
+              <>
+                <span className="text-muted-foreground/30 text-xs hidden sm:inline">—</span>
+                <span className="text-[11px] text-muted-foreground/50 hidden sm:inline truncate max-w-xs">{pick.reason}</span>
+              </>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[10px] font-semibold ${TIER_COLOR[pick.volatility.tier]}`}>
-            {pick.volatility.label}
-          </span>
-          <span className="text-[10px] text-muted-foreground/40 font-mono">{pick.runnerCount}r</span>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/60 transition-colors" />
-        </div>
+
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
       </div>
     </Link>
   );
 }
 
-function EmptySlot({ label, icon }: { label: string; icon: React.ReactNode }) {
+function AvoidRow({ entry }: { entry: AvoidEntry }) {
   return (
-    <div className="rounded-xl border border-dashed border-border/40 p-4 flex flex-col items-center justify-center gap-2 text-center min-h-[120px]">
-      <span className="text-muted-foreground/30">{icon}</span>
-      <span className="text-xs text-muted-foreground/40">{label}</span>
-    </div>
+    <Link href={`/racecards/${entry.racecardId}`}>
+      <div className="group flex items-center gap-3 px-4 py-2.5 hover:bg-secondary/30 transition-colors cursor-pointer border-b border-border/15 last:border-0">
+        <Ban className="h-3.5 w-3.5 text-red-400/50 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm font-semibold">{entry.venue}</span>
+            <span className="text-muted-foreground/40 text-xs">·</span>
+            <span className="text-xs font-mono text-muted-foreground/70">{entry.raceTime}</span>
+            <span className="text-muted-foreground/40 text-xs">—</span>
+            <span className="text-xs text-muted-foreground/60 truncate">{entry.raceName}</span>
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className={`text-[10px] font-semibold ${TIER_COLOR[entry.volatility.tier]}`}>
+              {entry.volatility.label} · {entry.volatility.score}/100
+            </span>
+            <span className="text-[10px] text-muted-foreground/40">{entry.runnerCount} runners</span>
+          </div>
+        </div>
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
+      </div>
+    </Link>
+  );
+}
+
+function BoardSection({
+  icon, title, subtitle, accent, picks, maxRows = 8, emptyNote,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  accent: string;
+  picks: ScoredPick[];
+  maxRows?: number;
+  emptyNote: string;
+}) {
+  const display = picks.slice(0, maxRows);
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="px-4 py-3 border-b border-border/30 bg-secondary/10">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className={accent}>{icon}</span>
+            <CardTitle className="text-sm font-bold tracking-tight">{title}</CardTitle>
+            {display.length > 0 && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-current/10 ${accent}`} style={{ backgroundColor: "transparent", border: "1px solid currentColor", opacity: 0.7 }}>
+                {display.length}
+              </span>
+            )}
+          </div>
+          {subtitle && <span className="text-[10px] text-muted-foreground/50">{subtitle}</span>}
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {display.length === 0 ? (
+          <div className="px-4 py-5 text-center">
+            <p className="text-xs text-muted-foreground/50">{emptyNote}</p>
+          </div>
+        ) : (
+          display.map((p, i) => <BoardRow key={`${p.racecardId}-${p.horseName}`} pick={p} rank={i + 1} />)
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -240,7 +293,7 @@ function EmptySlot({ label, icon }: { label: string; icon: React.ReactNode }) {
 
 export default function Dashboard() {
   const { data: summary } = useGetDashboardSummary({
-    query: { queryKey: getGetDashboardSummaryQueryKey() }
+    query: { queryKey: getGetDashboardSummaryQueryKey() },
   });
 
   const { data: todayRacecards, isLoading: loadingRacecards } = useListRacecards(
@@ -248,208 +301,207 @@ export default function Dashboard() {
     { query: { queryKey: getListRacecardsQueryKey({ date: todayStr }), staleTime: 60_000 } }
   );
 
-  // Parallel queries — one analysis per today's racecard
   const analysisQueries = useQueries({
     queries: (todayRacecards ?? []).map(r => ({
       queryKey: getGetRacecardAnalysisQueryKey(r.id),
       queryFn: async () => {
         const res = await fetch(`/api/racecards/${r.id}/analysis`);
-        if (!res.ok) throw new Error("analysis failed");
-        return res.json() as Promise<{
-          racecard: typeof r;
-          runners: Array<{
-            id: number; horseName: string; draw?: number | null; age?: string | null;
-            form?: string | null; odds?: string | null; jockey?: string | null;
-            trainer?: string | null; weight?: string | null;
-            isNonRunner?: boolean | null; scratched?: boolean | null;
-          }>;
-        }>;
+        if (!res.ok) throw new Error("failed");
+        return res.json() as Promise<{ runners: RunnerRow[] }>;
       },
       staleTime: 60_000,
       enabled: (todayRacecards?.length ?? 0) > 0,
     })),
   });
 
-  const loadingAnalysis = analysisQueries.some(q => q.isLoading);
   const loadedCount = analysisQueries.filter(q => q.isSuccess).length;
   const totalCount = analysisQueries.length;
+  const loadingAnalysis = analysisQueries.some(q => q.isLoading);
 
-  // Aggregate picks across all today's races
-  const { betOfDay, valueBet, replayUpgrade, topRated, avoidRaces, hasAnyPick } = useMemo(() => {
-    const allPicks: NonNullable<ReturnType<typeof computeRacePicks>>[] = [];
+  const board: DayBoard = useMemo(() => {
+    const out: DayBoard = { betsOfDay: [], eachWayValue: [], replayUpgrades: [], hiddenValue: [], avoidRaces: [] };
+    if (!todayRacecards) return out;
 
     analysisQueries.forEach((q, i) => {
-      const rc = todayRacecards?.[i];
+      const rc = todayRacecards[i];
       if (!q.data || !rc) return;
-      const picks = computeRacePicks(rc, q.data.runners);
-      if (picks) allPicks.push(picks);
+      const { betsOfDay, eachWayValue, replayUpgrades, hiddenValue, avoid } = buildRaceEntries(rc, q.data.runners);
+      out.betsOfDay.push(...betsOfDay);
+      out.eachWayValue.push(...eachWayValue);
+      out.replayUpgrades.push(...replayUpgrades);
+      out.hiddenValue.push(...hiddenValue);
+      if (avoid) out.avoidRaces.push(avoid);
     });
 
-    // Bet Of Day — best_of_day pick, sorted by totalScore proxy (first found, best race)
-    const bodCandidates = allPicks
-      .filter(p => p.bestOfDay && !p.noBetRace)
-      .map(p => p.bestOfDay!);
-    const betOfDay = bodCandidates[0] ?? null;
+    // Sort each list strongest → weakest
+    const byScore = (a: ScoredPick, b: ScoredPick) => b.totalScore - a.totalScore;
+    const byCatScore = (a: ScoredPick, b: ScoredPick) => b.categoryScore - a.categoryScore;
 
-    // Value Bet — best hidden_value pick not in a no-bet race
-    const hvCandidates = allPicks
-      .filter(p => p.hiddenValue && !p.noBetRace)
-      .map(p => p.hiddenValue!);
-    const valueBet = hvCandidates[0] ?? null;
+    out.betsOfDay.sort(byScore);
+    out.eachWayValue.sort(byCatScore);
+    out.replayUpgrades.sort(byCatScore);
+    out.hiddenValue.sort(byCatScore);
+    out.avoidRaces.sort((a, b) => b.volatility.score - a.volatility.score);
 
-    // Replay Upgrade — best replay_upgrade pick
-    const replayCandidates = allPicks
-      .filter(p => p.replayUpgrade && !p.noBetRace)
-      .map(p => p.replayUpgrade!);
-    const replayUpgrade = replayCandidates[0] ?? null;
+    // Deduplicate: one horse can appear in multiple categories but only once per category per racecard
+    const dedup = (arr: ScoredPick[]) => {
+      const seen = new Set<string>();
+      return arr.filter(p => {
+        const key = `${p.racecardId}:${p.horseName}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+    out.betsOfDay    = dedup(out.betsOfDay);
+    out.eachWayValue = dedup(out.eachWayValue);
+    out.replayUpgrades = dedup(out.replayUpgrades);
+    out.hiddenValue  = dedup(out.hiddenValue);
 
-    // Top Rated — overall top-rated horse from any non-extreme race
-    const ratedCandidates = allPicks
-      .filter(p => !p.noBetRace && p.topRated.confidenceClass !== "no_bet")
-      .map(p => p.topRated);
-    // Pick one from a different race than BOD if possible
-    const topRated = ratedCandidates.find(r =>
-      !betOfDay || r.racecardId !== betOfDay.racecardId
-    ) ?? ratedCandidates[0] ?? null;
-
-    // Avoid — no-bet / extreme volatility races
-    const avoidRaces = allPicks
-      .filter(p => p.noBetRace)
-      .map(p => p.topRated);
-
-    const hasAnyPick = !!(betOfDay || valueBet || replayUpgrade || topRated);
-
-    return { betOfDay, valueBet, replayUpgrade, topRated, avoidRaces, hasAnyPick };
+    return out;
   }, [analysisQueries, todayRacecards]);
 
-  // Loading state
   const isBootstrapping = loadingRacecards || (totalCount > 0 && loadedCount === 0);
+  const totalPicks = board.betsOfDay.length + board.eachWayValue.length + board.replayUpgrades.length + board.hiddenValue.length;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold tracking-tight mb-0.5">APEX Racing Analyst</h1>
-          <p className="text-muted-foreground text-sm">
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight mb-0.5">APEX Daily Betting Board</h1>
+          <p className="text-sm text-muted-foreground">
             {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </p>
         </div>
-        {totalCount > 0 && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            {loadingAnalysis ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary/60" />
-                <span className="text-xs text-muted-foreground/60">{loadedCount}/{totalCount} analysed</span>
-              </>
-            ) : (
-              <>
-                <Zap className="h-3.5 w-3.5 text-primary" />
-                <span className="text-xs text-primary font-semibold">{loadedCount} races analysed</span>
-              </>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0 pt-1">
+          {loadingAnalysis ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary/60" />
+              <span className="text-xs text-muted-foreground/60">{loadedCount}/{totalCount} races</span>
+            </>
+          ) : totalCount > 0 ? (
+            <>
+              <Zap className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs text-primary font-semibold">{loadedCount} races analysed</span>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* ── Stats strip ── */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {[
-          { label: "Today's Races",  value: summary?.todayRaceCount ?? "—" },
-          { label: "Total Runners",  value: summary?.totalRunners   ?? "—" },
-          { label: "Horses on File", value: summary?.totalHorses    ?? "—" },
-          { label: "Avoid Today",    value: avoidRaces.length || "—"       },
+          { label: "Today's Races",  value: summary?.todayRaceCount ?? "—",  accent: "" },
+          { label: "Bets Of Day",    value: board.betsOfDay.length   || (loadingAnalysis ? "…" : "0"), accent: "text-amber-400" },
+          { label: "EW Value",       value: board.eachWayValue.length || (loadingAnalysis ? "…" : "0"), accent: "text-teal-400"   },
+          { label: "Replay Picks",   value: board.replayUpgrades.length || (loadingAnalysis ? "…" : "0"), accent: "text-purple-400" },
+          { label: "Avoid Today",    value: board.avoidRaces.length   || (loadingAnalysis ? "…" : "0"), accent: "text-red-400"    },
         ].map(s => (
           <div key={s.label} className="bg-secondary/30 rounded-lg px-3 py-2.5 text-center">
-            <div className="text-lg font-bold font-mono">{s.value}</div>
+            <div className={`text-xl font-bold font-mono ${s.accent}`}>{s.value}</div>
             <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mt-0.5">{s.label}</div>
           </div>
         ))}
       </div>
 
       {isBootstrapping ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
-          <p className="text-sm text-muted-foreground">Analysing today's races…</p>
+          <p className="text-sm text-muted-foreground">Loading today's races and computing picks…</p>
         </div>
-      ) : !hasAnyPick && loadedCount > 0 ? (
+      ) : totalCount === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
+          <CardContent className="flex flex-col items-center justify-center py-14 gap-3">
             <TrendingUp className="h-10 w-10 text-muted-foreground/20" />
-            <p className="text-sm text-muted-foreground">No qualifying picks today — all races flagged as No Bet or Extreme Volatility.</p>
-            <Link href="/racecards">
-              <span className="text-xs text-primary hover:underline">View full racecards →</span>
+            <p className="text-sm text-muted-foreground">No racecards for today. Upload a racecard to get started.</p>
+            <Link href="/upload">
+              <span className="text-xs text-primary hover:underline">Upload racecards →</span>
             </Link>
           </CardContent>
         </Card>
       ) : (
-        <>
-          {/* ── BET OF THE DAY ── */}
-          <section className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Trophy className="h-4 w-4 text-amber-400" />
-              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Main Bet Of The Day</h2>
-            </div>
-            {betOfDay ? (
-              <BetOfDayCard pick={betOfDay} />
-            ) : (
-              <div className="rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 p-5 text-center">
-                <p className="text-sm text-muted-foreground/60">
-                  {loadingAnalysis ? "Scanning races for Best Of Day pick…" : "No Best Of Day qualifier today — check back or review individual races."}
-                </p>
-              </div>
-            )}
-          </section>
+        <div className="space-y-4">
 
-          {/* ── TOP 3 PICKS ── */}
-          <section className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Star className="h-4 w-4 text-primary" />
-              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Top APEX Picks Today</h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {valueBet
-                ? <PickCard pick={valueBet}    type="value"  />
-                : <EmptySlot label="No Value Bet identified" icon={<Eye className="h-6 w-6" />} />}
-              {replayUpgrade
-                ? <PickCard pick={replayUpgrade} type="replay" />
-                : <EmptySlot label="No Replay Upgrade today" icon={<Film className="h-6 w-6" />} />}
-              {topRated
-                ? <PickCard pick={topRated}    type="rated"  />
-                : <EmptySlot label="No Top Rated pick available" icon={<Star className="h-6 w-6" />} />}
-            </div>
-          </section>
+          {/* 1 ── BETS OF THE DAY */}
+          <BoardSection
+            icon={<Trophy className="h-4 w-4" />}
+            title="Bets Of The Day"
+            subtitle="Best Of Day classifications — strongest to weakest"
+            accent="text-amber-400"
+            picks={board.betsOfDay}
+            maxRows={5}
+            emptyNote={loadingAnalysis ? "Scanning races…" : "No Best Of Day qualifiers today — race volatility may be blocking this tier."}
+          />
 
-          {/* ── AVOID TODAY ── */}
-          {avoidRaces.length > 0 && (
-            <section className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Ban className="h-4 w-4 text-red-400/70" />
-                <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Avoid Today</h2>
-                <span className="text-[10px] text-muted-foreground/40">No Bet / Extreme Volatility</span>
-              </div>
-              <Card className="border-red-500/20 bg-red-500/3">
-                <CardContent className="p-2 divide-y divide-border/20">
-                  {avoidRaces.map(pick => (
-                    <AvoidRow key={pick.racecardId} pick={pick} />
-                  ))}
-                </CardContent>
-              </Card>
-            </section>
+          {/* 2 ── EACH WAY VALUE BETS */}
+          <BoardSection
+            icon={<Star className="h-4 w-4" />}
+            title="Each Way Value Bets"
+            subtitle="Hidden value profiles with each-way odds potential"
+            accent="text-teal-400"
+            picks={board.eachWayValue}
+            maxRows={6}
+            emptyNote={loadingAnalysis ? "Scanning races…" : "No each-way value candidates identified today."}
+          />
+
+          {/* 3 ── REPLAY UPGRADES */}
+          <BoardSection
+            icon={<Film className="h-4 w-4" />}
+            title="Replay Upgrades"
+            subtitle="Horses whose effort is better than form figures suggest"
+            accent="text-purple-400"
+            picks={board.replayUpgrades}
+            maxRows={6}
+            emptyNote={loadingAnalysis ? "Scanning races…" : "No replay upgrade candidates today."}
+          />
+
+          {/* 4 ── HIDDEN VALUE */}
+          <BoardSection
+            icon={<Eye className="h-4 w-4" />}
+            title="Hidden Value Horses"
+            subtitle="Underestimated runners with market miss potential"
+            accent="text-emerald-400"
+            picks={board.hiddenValue}
+            maxRows={6}
+            emptyNote={loadingAnalysis ? "Scanning races…" : "No hidden value candidates identified today."}
+          />
+
+          {/* 5 ── AVOID TODAY */}
+          {board.avoidRaces.length > 0 && (
+            <Card className="overflow-hidden border-red-500/20">
+              <CardHeader className="px-4 py-3 border-b border-red-500/15 bg-red-500/5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Ban className="h-4 w-4 text-red-400/70" />
+                    <CardTitle className="text-sm font-bold tracking-tight">Avoid Today</CardTitle>
+                    <span className="text-[10px] font-bold text-red-400/60">{board.avoidRaces.length}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/50">Extreme Volatility / No Bet races</span>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {board.avoidRaces.map(entry => (
+                  <AvoidRow key={entry.racecardId} entry={entry} />
+                ))}
+              </CardContent>
+            </Card>
           )}
-        </>
-      )}
 
-      {/* ── Footer link ── */}
-      <div className="flex items-center justify-between pt-2 border-t border-border/20">
-        <span className="text-xs text-muted-foreground/40">APEX engine · automatic from race data</span>
-        <Link href="/racecards">
-          <span className="text-xs text-primary hover:underline flex items-center gap-1">
-            View all racecards <ChevronRight className="h-3 w-3" />
-          </span>
-        </Link>
-      </div>
+          {/* Footer */}
+          <div className="flex items-center justify-between pt-1 pb-2 border-t border-border/20">
+            <div className="text-xs text-muted-foreground/40">
+              {totalPicks} qualifying picks from {loadedCount} races · APEX engine · automatic
+            </div>
+            <Link href="/racecards">
+              <span className="text-xs text-primary hover:underline flex items-center gap-1">
+                View all racecards <ChevronRight className="h-3 w-3" />
+              </span>
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
