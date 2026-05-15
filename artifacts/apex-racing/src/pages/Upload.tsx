@@ -392,30 +392,66 @@ function FetchCard() {
   );
 }
 
-/** Parse ATR-style paste or plain "Course Time Horse" text into NR rows */
+/** Parse ATR-style paste — handles two formats:
+ *  A) Desktop tab-separated: "Newmarket\t17:25\t1.Angely Shani - Non Runner"
+ *  B) Mobile grouped (venue on own line, then "14:5511 Divine Knight14 Empire Of Light")
+ */
 function parseNrPaste(raw: string): ParsedRow[] {
   const rows: ParsedRow[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-    // Try tab-separated first (ATR copy), then multiple spaces, then single space
-    const parts = trimmed.includes("\t")
-      ? trimmed.split("\t").map(p => p.trim())
-      : trimmed.split(/\s{2,}/).map(p => p.trim());
+  let currentVenue = "";
 
-    if (parts.length < 3) continue;
+  for (const line of lines) {
+    // ── Format A: tab-separated ───────────────────────────────────────────
+    if (line.includes("\t")) {
+      const parts = line.split("\t").map(p => p.trim());
+      if (parts.length >= 3) {
+        const course = parts[0];
+        const time   = parts[1];
+        let horse    = parts.slice(2).join(" ").trim();
+        horse = horse.replace(/^\d+\.\s*/, "").replace(/\s*[-–]\s*Non[\s-]?Runner\s*$/i, "").trim();
+        if (course && time && horse) rows.push({ Course: course, "Race Time": time, Horse: horse });
+      }
+      continue;
+    }
 
-    const course = parts[0];
-    const time   = parts[1];
-    // Strip leading "N." number prefix and trailing " - Non Runner" / "- Non-Runner"
-    let horse = parts.slice(2).join(" ").trim();
-    horse = horse.replace(/^\d+\.\s*/, "");
-    horse = horse.replace(/\s*[-–]\s*Non[\s-]?Runner\s*$/i, "").trim();
-    if (!course || !time || !horse) continue;
+    // ── Format B: ATR mobile grouped ─────────────────────────────────────
+    // Line starts with HH:MM — it's a time+horses line
+    const timeMatch = line.match(/^(\d{1,2}:\d{2})(.*)/);
+    if (timeMatch) {
+      const time = timeMatch[1];
+      const rest = timeMatch[2]; // e.g. "11 Divine Knight14 Empire Of Light"
 
-    rows.push({ Course: course, "Race Time": time, Horse: horse });
+      // Each horse entry is: cloth-number space horse-name
+      // The next cloth number runs straight into the end of the previous name,
+      // e.g. "11 Divine Knight14 Empire Of Light" → ["Divine Knight", "Empire Of Light"]
+      // Lookahead stops each match where the next cloth number + capital-letter begins.
+      const horseRe = /(\d+)\s+(.+?)(?=\d+\s+[A-Z'ÀÉ]|$)/g;
+      let m: RegExpExecArray | null;
+      let found = false;
+      while ((m = horseRe.exec(rest)) !== null) {
+        const horse = m[2].trim().replace(/\s*[-–]\s*Non[\s-]?Runner\s*$/i, "");
+        if (horse && currentVenue) {
+          rows.push({ Course: currentVenue, "Race Time": time, Horse: horse });
+          found = true;
+        }
+      }
+      // Fallback: single horse on line — strip leading cloth number
+      if (!found && currentVenue) {
+        const horse = rest.replace(/^\d+\s+/, "").trim().replace(/\s*[-–]\s*Non[\s-]?Runner\s*$/i, "");
+        if (horse) rows.push({ Course: currentVenue, "Race Time": time, Horse: horse });
+      }
+      continue;
+    }
+
+    // ── Venue line: no time pattern, no tabs ──────────────────────────────
+    // Accept venue names including hyphens, accents, spaces
+    if (!timeMatch && line.length >= 2) {
+      currentVenue = line;
+    }
   }
+
   return rows;
 }
 
