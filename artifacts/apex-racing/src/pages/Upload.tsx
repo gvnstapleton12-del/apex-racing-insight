@@ -292,8 +292,14 @@ export default function Upload() {
           <div>
             <p className="text-xs font-semibold text-muted-foreground mb-1">Combined format (one runner per row — races + runners created automatically):</p>
             <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono leading-relaxed">
-              Racecourse · Date · Time · Horse Name · Jockey · Trainer<br />
-              Distance · Going · Class · Draw · Age · Weight · Form · Prize_Win
+              Racecourse (or Course) · Date · Time (or Race Time) · Horse Name (or Horse)<br />
+              Jockey · Trainer · Distance · Going · Class · Draw · Age · Weight · Form · Prize_Win
+            </code>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-1">Non-runners format (no Date column — matched to existing racecards by Course + Time):</p>
+            <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono leading-relaxed">
+              Course · Race Time · Horse — horses are marked scratched automatically
             </code>
           </div>
           <div>
