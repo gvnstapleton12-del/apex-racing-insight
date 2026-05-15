@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronUp, Star, Eye, AlertTriangle, Film, TrendingUp, Zap } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Star, Eye, AlertTriangle, Film, TrendingUp, ChevronDown, ChevronUp,
+  Zap, ShieldAlert, Trophy, Ban,
+} from "lucide-react";
 import {
   runApexEngine,
   type ApexEngineResult,
@@ -10,7 +12,6 @@ import {
   type ScoreBreakdown,
   type VolatilityTier,
 } from "@/lib/apexEngine";
-import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { detectReplayTriggers, type DetectedTrigger } from "@/lib/replayTriggers";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,8 +48,8 @@ interface RankedEntry {
   rank: number;
   highlights: Highlight[];
   triggers: DetectedTrigger[];
-  fieldEdge: number;       // score - fieldAvg (positive = above average)
-  fieldN: number;          // total active runners
+  fieldEdge: number;
+  fieldN: number;
   categoryRanks: CategoryRanks;
 }
 
@@ -78,11 +79,7 @@ function parseOddsDecimal(odds: string | null | undefined): number | null {
 const CAT_KEYS = ["ability", "paceFit", "tacticalResilience", "groundTrip", "replayIntelligence", "hiddenValue"] as const;
 type CatKey = typeof CAT_KEYS[number];
 
-const RANK_STYLE: Record<number, { outer: string; text: string }> = {
-  1: { outer: "bg-amber-500/20 border-amber-500/50",   text: "text-amber-400" },
-  2: { outer: "bg-slate-500/15 border-slate-400/30",   text: "text-slate-300" },
-  3: { outer: "bg-orange-700/15 border-orange-600/30", text: "text-orange-400" },
-};
+// ── Visual constants ──────────────────────────────────────────────────────────
 
 const SCORE_COLOR = (s: number) =>
   s >= 72 ? "text-amber-400" : s >= 65 ? "text-blue-400" : s >= 55 ? "text-green-400" : s >= 45 ? "text-yellow-400" : "text-muted-foreground";
@@ -92,6 +89,13 @@ const SCORE_RING_STROKE = (s: number) =>
 
 const TIER_ACCENT: Record<VolatilityTier, string> = {
   low: "text-green-400", medium: "text-amber-400", high: "text-orange-400", extreme: "text-red-400",
+};
+
+const TIER_BORDER: Record<VolatilityTier, string> = {
+  low: "border-green-500/30 bg-green-500/5",
+  medium: "border-amber-500/30 bg-amber-500/5",
+  high: "border-orange-500/30 bg-orange-500/5",
+  extreme: "border-red-500/30 bg-red-500/5",
 };
 
 const CATS = [
@@ -104,19 +108,10 @@ const CATS = [
   { key: "volatilityRisk",     label: "Volatility Risk",     bar: "bg-red-500", inverted: true },
 ] as const;
 
-const HIGHLIGHT_CONFIG: Record<Highlight, { icon: React.ReactNode; label: string; style: string }> = {
-  top_rated:           { icon: <Star className="h-2.5 w-2.5" />,          label: "Top Rated",      style: "text-amber-400 border-amber-400/40 bg-amber-400/10" },
-  hidden_value_pick:   { icon: <Eye className="h-2.5 w-2.5" />,           label: "Hidden Value",   style: "text-emerald-400 border-emerald-400/40 bg-emerald-400/10" },
-  dangerous_favourite: { icon: <AlertTriangle className="h-2.5 w-2.5" />, label: "Danger Fav",    style: "text-red-400 border-red-400/40 bg-red-400/10" },
-  replay_trigger:      { icon: <Film className="h-2.5 w-2.5" />,          label: "Replay Trigger", style: "text-purple-400 border-purple-400/40 bg-purple-400/10" },
-};
-
-const CLASS_CONFIG: Record<string, { label: string; accent: string; dot: string }> = {
-  best_of_day:            { label: "Best Of Day",             accent: "text-amber-400",   dot: "bg-amber-400" },
-  top_rated_high_variance: { label: "Top Rated / High Var",  accent: "text-blue-400",    dot: "bg-blue-400" },
-  hidden_value:           { label: "Hidden Value",            accent: "text-emerald-400", dot: "bg-emerald-400" },
-  replay_upgrade:         { label: "Replay Upgrade",          accent: "text-purple-400",  dot: "bg-purple-400" },
-  no_bet:                 { label: "No Bet",                  accent: "text-muted-foreground", dot: "bg-muted-foreground/30" },
+const RANK_STYLE: Record<number, { outer: string; text: string }> = {
+  1: { outer: "bg-amber-500/20 border-amber-500/50",   text: "text-amber-400" },
+  2: { outer: "bg-slate-500/15 border-slate-400/30",   text: "text-slate-300" },
+  3: { outer: "bg-orange-700/15 border-orange-600/30", text: "text-orange-400" },
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -154,77 +149,92 @@ function CatBar({ label, score, note, bar, fieldRank, fieldN, inverted }:
           #{fieldRank}/{fieldN}
         </span>
       </div>
-      {note && <p className="text-[10px] text-muted-foreground/60 leading-snug pl-36 pr-22">{note}</p>}
+      {note && <p className="text-[10px] text-muted-foreground/60 leading-snug pl-36">{note}</p>}
     </div>
   );
 }
 
-// ── Engine Selection Output ───────────────────────────────────────────────────
+// ── Pick Card ─────────────────────────────────────────────────────────────────
 
-function EngineSelectionOutput({ ranked }: { ranked: RankedEntry[] }) {
-  const selections = ranked.filter(e => e.result.confidenceClass !== "no_bet");
-  const noBets = ranked.filter(e => e.result.confidenceClass === "no_bet");
+interface PickCardProps {
+  type: "top_rated" | "best_of_day" | "hidden_value" | "replay_upgrade" | "dangerous_fav";
+  entry?: RankedEntry;
+  reason?: string;
+  governanceNote?: string;
+}
 
-  const classOrder = ["best_of_day", "top_rated_high_variance", "hidden_value", "replay_upgrade"];
+const PICK_CONFIG = {
+  top_rated:      { label: "TOP RATED",       icon: <Trophy className="h-3.5 w-3.5" />,       border: "border-amber-500/40",   bg: "bg-amber-500/8",   accent: "text-amber-400",   dot: "bg-amber-400"   },
+  best_of_day:    { label: "BEST OF DAY",     icon: <Star className="h-3.5 w-3.5" />,          border: "border-amber-400/30",   bg: "bg-amber-400/5",   accent: "text-amber-300",   dot: "bg-amber-300"   },
+  hidden_value:   { label: "HIDDEN VALUE",    icon: <Eye className="h-3.5 w-3.5" />,           border: "border-emerald-500/40", bg: "bg-emerald-500/8", accent: "text-emerald-400", dot: "bg-emerald-400" },
+  replay_upgrade: { label: "REPLAY UPGRADE",  icon: <Film className="h-3.5 w-3.5" />,          border: "border-purple-500/40",  bg: "bg-purple-500/8",  accent: "text-purple-400",  dot: "bg-purple-400"  },
+  dangerous_fav:  { label: "DANGER FAVOURITE", icon: <AlertTriangle className="h-3.5 w-3.5" />, border: "border-red-500/40",     bg: "bg-red-500/8",     accent: "text-red-400",     dot: "bg-red-400"     },
+};
+
+function PickCard({ type, entry, reason, governanceNote }: PickCardProps) {
+  const cfg = PICK_CONFIG[type];
+  const isEmpty = !entry;
 
   return (
-    <div className="border-b border-border/30 px-4 py-3 space-y-2">
-      <div className="flex items-center gap-2 mb-3">
-        <Zap className="h-3.5 w-3.5 text-primary" />
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Engine Selection Output</span>
+    <div className={`rounded-lg border p-3 flex flex-col gap-1.5 ${cfg.border} ${cfg.bg}`}>
+      <div className={`flex items-center gap-1.5 ${cfg.accent}`}>
+        {cfg.icon}
+        <span className="text-[10px] font-bold uppercase tracking-widest">{cfg.label}</span>
       </div>
 
-      {selections.length === 0 ? (
-        <div className="flex items-center gap-2 py-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 shrink-0" />
-          <span className="text-xs text-muted-foreground">
-            No qualifying selections — race environment or scores insufficient
-          </span>
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {classOrder.map(cls => {
-            const picks = ranked.filter(e => e.result.confidenceClass === cls);
-            if (picks.length === 0) return null;
-            const cfg = CLASS_CONFIG[cls];
-            return (
-              <div key={cls} className="flex items-start gap-2.5">
-                <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${cfg.dot}`} />
-                <div className="flex-1 min-w-0">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${cfg.accent}`}>{cfg.label}</span>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                    {picks.map(p => (
-                      <div key={p.runner.id} className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold">{p.runner.horseName}</span>
-                        <span className="text-[10px] font-mono text-muted-foreground">{p.result.totalScore}</span>
-                        {p.runner.odds && (
-                          <span className="text-[10px] text-primary font-mono">{p.runner.odds}</span>
-                        )}
-                        <span className={`text-[10px] font-mono ${p.fieldEdge >= 0 ? "text-green-400/70" : "text-muted-foreground/40"}`}>
-                          {p.fieldEdge >= 0 ? "+" : ""}{p.fieldEdge} vs field
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          {noBets.length > 0 && (
-            <div className="flex items-start gap-2.5">
-              <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-muted-foreground/20" />
-              <div className="flex-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/50">No Bet</span>
-                <div className="flex flex-wrap gap-x-3 mt-0.5">
-                  {noBets.map(p => (
-                    <span key={p.runner.id} className="text-xs text-muted-foreground/40">{p.runner.horseName}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
+      {isEmpty ? (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm text-muted-foreground/50 font-medium">None</span>
+          {governanceNote && (
+            <span className="text-[10px] text-muted-foreground/40 leading-snug">{governanceNote}</span>
           )}
         </div>
+      ) : (
+        <>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-bold text-base leading-tight truncate">{entry.runner.horseName}</div>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                {entry.runner.odds && (
+                  <span className="text-xs font-mono font-semibold text-primary">{entry.runner.odds}</span>
+                )}
+                <span className={`text-[10px] font-mono ${entry.fieldEdge >= 0 ? "text-green-400/70" : "text-muted-foreground/40"}`}>
+                  {entry.fieldEdge >= 0 ? "+" : ""}{entry.fieldEdge} vs field
+                </span>
+              </div>
+            </div>
+            <ScoreRing score={entry.result.totalScore} size={40} />
+          </div>
+          {reason && (
+            <p className="text-[10px] text-muted-foreground/60 leading-snug border-t border-border/20 pt-1.5">
+              {reason}
+            </p>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+// ── No Bet Banner ─────────────────────────────────────────────────────────────
+
+function NoBetBanner({ raceVolatility }: { raceVolatility: RaceVolatilityResult }) {
+  return (
+    <div className="mx-4 my-3 rounded-lg border border-red-500/40 bg-red-500/8 px-4 py-3 flex items-start gap-3">
+      <Ban className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+      <div>
+        <div className="text-sm font-bold text-red-400 uppercase tracking-wide">NO BET — Race Volatility Too High</div>
+        <p className="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug">
+          {raceVolatility.label} · {raceVolatility.score}/100 — {raceVolatility.governanceNote}
+        </p>
+        {raceVolatility.factors.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {raceVolatility.factors.map((f, i) => (
+              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400/70 border border-red-500/20">{f}</span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -238,7 +248,7 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
     const active = runners.filter(r => !r.isNonRunner && !r.scratched);
     if (active.length === 0) return [];
 
-    // ── Score every runner ────────────────────────────────────────────────────
+    // Score every runner
     const scored = active.map(runner => ({
       runner,
       result: runApexEngine(
@@ -250,20 +260,17 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
       triggers: detectReplayTriggers({ form: runner.form, odds: runner.odds, age: runner.age }),
     }));
 
-    // ── Sort by total score ───────────────────────────────────────────────────
+    // Sort by total score descending
     scored.sort((a, b) => b.result.totalScore - a.result.totalScore);
     const n = scored.length;
-
-    // ── Field statistics ──────────────────────────────────────────────────────
     const fieldAvg = scored.reduce((sum, e) => sum + e.result.totalScore, 0) / n;
 
-    // Per-category rank maps: 1 = best in field
-    type ScoredEntry = typeof scored[0];
-    const catRankById = (sortFn: (a: ScoredEntry, b: ScoredEntry) => number) => {
+    // Per-category rank maps (1 = best)
+    type SE = typeof scored[0];
+    const catRankById = (sortFn: (a: SE, b: SE) => number) => {
       const order = [...scored].sort(sortFn);
       return new Map(order.map((e, i) => [e.runner.id, i + 1]));
     };
-
     const rankMaps: Record<string, Map<number, number>> = {
       ability:            catRankById((a, b) => b.result.ability.score - a.result.ability.score),
       paceFit:            catRankById((a, b) => b.result.paceFit.score - a.result.paceFit.score),
@@ -271,12 +278,11 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
       groundTrip:         catRankById((a, b) => b.result.groundTrip.score - a.result.groundTrip.score),
       replayIntelligence: catRankById((a, b) => b.result.replayIntelligence.score - a.result.replayIntelligence.score),
       hiddenValue:        catRankById((a, b) => b.result.hiddenValue.score - a.result.hiddenValue.score),
-      volatilityRisk:     catRankById((a, b) => a.result.volatilityRisk.score - b.result.volatilityRisk.score), // lower is better
+      volatilityRisk:     catRankById((a, b) => a.result.volatilityRisk.score - b.result.volatilityRisk.score),
     };
+    const catRank = (id: number, key: string) => rankMaps[key]?.get(id) ?? n;
 
-    const catRank = (runnerId: number, key: string) => rankMaps[key]?.get(runnerId) ?? n;
-
-    // ── Highlight candidates ──────────────────────────────────────────────────
+    // Highlight candidates
     const bestHV = scored.reduce<typeof scored[0] | null>((best, cur) =>
       cur.result.hiddenValue.score > (best?.result.hiddenValue.score ?? -1) ? cur : best, null);
 
@@ -288,17 +294,13 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
     const favIsDangerous = shortFav &&
       (shortFav.result.volatilityRisk.score >= 50 || raceVolatility.tier === "high" || raceVolatility.tier === "extreme");
 
-    // ── Build final ranked entries ────────────────────────────────────────────
     return scored.map((entry, i) => {
       const rid = entry.runner.id;
       const highlights: Highlight[] = [];
       if (i === 0) highlights.push("top_rated");
-      if (bestHV && rid === bestHV.runner.id && entry.result.hiddenValue.score >= 58)
-        highlights.push("hidden_value_pick");
-      if (favIsDangerous && rid === shortFav.runner.id)
-        highlights.push("dangerous_favourite");
-      if (entry.triggers.length > 0)
-        highlights.push("replay_trigger");
+      if (bestHV && rid === bestHV.runner.id && entry.result.hiddenValue.score >= 58) highlights.push("hidden_value_pick");
+      if (favIsDangerous && rid === shortFav.runner.id) highlights.push("dangerous_favourite");
+      if (entry.triggers.length > 0) highlights.push("replay_trigger");
 
       return {
         ...entry,
@@ -319,7 +321,7 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
     });
   }, [runners, racecardInput, raceVolatility.tier]);
 
-  // ── Empty state ───────────────────────────────────────────────────────────
+  // Empty state
   if (ranked.length === 0) {
     const activeCount = runners.filter(r => !r.isNonRunner && !r.scratched).length;
     return (
@@ -327,82 +329,146 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
         <CardContent className="flex flex-col items-center justify-center py-8 gap-2">
           <TrendingUp className="h-8 w-8 text-muted-foreground/30" />
           <p className="text-sm text-muted-foreground">
-            {activeCount === 0
-              ? "Add runners to generate the APEX ranking"
-              : "Loading race analysis…"}
+            {activeCount === 0 ? "Add runners to generate the APEX ranking" : "Loading race analysis…"}
           </p>
         </CardContent>
       </Card>
     );
   }
 
-  const replayHorses = ranked.filter(e => e.highlights.includes("replay_trigger"));
-  const hvPick = ranked.find(e => e.highlights.includes("hidden_value_pick"));
-  const dangerFav = ranked.find(e => e.highlights.includes("dangerous_favourite"));
+  // Derive picks from ranked list
+  const topRated   = ranked[0];
+  const bestOfDay  = ranked.find(e => e.result.confidenceClass === "best_of_day");
+  const allBOD     = ranked.filter(e => e.result.confidenceClass === "best_of_day");
+  const hvPick     = ranked.find(e => e.result.confidenceClass === "hidden_value" || e.highlights.includes("hidden_value_pick"));
+  const replayPick = ranked.find(e => e.result.confidenceClass === "replay_upgrade");
+  const allReplay  = ranked.filter(e => e.result.confidenceClass === "replay_upgrade");
+  const dangerFav  = ranked.find(e => e.highlights.includes("dangerous_favourite"));
+
+  const allNoBet = ranked.every(e => e.result.confidenceClass === "no_bet");
+  const isNoBetRace = allNoBet || raceVolatility.tier === "extreme";
+
+  const blocked = raceVolatility.blockedClasses;
+  const govNote = raceVolatility.governanceNote;
 
   return (
     <Card className="border-primary/20 overflow-hidden" data-testid="apex-race-analysis">
-      {/* ── Header ── */}
-      <CardHeader className="px-4 pt-4 pb-0">
-        <div className="flex items-center justify-between gap-3 pb-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-primary" />
-            <CardTitle className="text-sm font-semibold tracking-tight">APEX Race Analysis</CardTitle>
-            <span className="text-[10px] text-muted-foreground/60 font-mono">{ranked.length} runners scored</span>
-          </div>
-          <span className={`text-[10px] font-semibold ${TIER_ACCENT[raceVolatility.tier]}`}>
-            {raceVolatility.label} · {raceVolatility.score}/100
+
+      {/* ── Header bar ──────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-border/30">
+        <div className="flex items-center gap-2">
+          <Zap className="h-4 w-4 text-primary" />
+          <span className="text-sm font-bold tracking-tight">APEX PICKS</span>
+          <span className="text-[10px] text-muted-foreground/50 font-mono">{ranked.length} runners analysed</span>
+        </div>
+        <div className={`flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-full border ${TIER_BORDER[raceVolatility.tier]} ${TIER_ACCENT[raceVolatility.tier]}`}>
+          <ShieldAlert className="h-3 w-3" />
+          {raceVolatility.label} · {raceVolatility.score}/100
+        </div>
+      </div>
+
+      {/* ── No Bet Race warning ──────────────────────────────────────────────── */}
+      {isNoBetRace && <NoBetBanner raceVolatility={raceVolatility} />}
+
+      {/* ── Pick cards grid ──────────────────────────────────────────────────── */}
+      <div className={`px-4 py-3 grid gap-2.5 ${isNoBetRace ? "opacity-50 pointer-events-none" : ""}`}
+           style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+
+        {/* TOP RATED — always shown */}
+        <PickCard
+          type="top_rated"
+          entry={topRated}
+          reason={topRated.result.ability.note}
+        />
+
+        {/* BEST OF DAY */}
+        {blocked.includes("best_of_day") ? (
+          <PickCard type="best_of_day" governanceNote={`Blocked — ${govNote}`} />
+        ) : (
+          <PickCard
+            type="best_of_day"
+            entry={bestOfDay}
+            reason={bestOfDay
+              ? `${bestOfDay.result.classificationNote}${allBOD.length > 1 ? ` · Also: ${allBOD.slice(1).map(e => e.runner.horseName).join(", ")}` : ""}`
+              : "No horse reached Best Of Day threshold"}
+          />
+        )}
+
+        {/* HIDDEN VALUE */}
+        {blocked.includes("hidden_value") ? (
+          <PickCard type="hidden_value" governanceNote={`Blocked — ${govNote}`} />
+        ) : (
+          <PickCard
+            type="hidden_value"
+            entry={hvPick}
+            reason={hvPick ? hvPick.result.hiddenValue.note : "No hidden value candidate identified"}
+          />
+        )}
+
+        {/* REPLAY UPGRADE */}
+        {blocked.includes("replay_upgrade") ? (
+          <PickCard type="replay_upgrade" governanceNote={`Blocked — ${govNote}`} />
+        ) : (
+          <PickCard
+            type="replay_upgrade"
+            entry={replayPick}
+            reason={replayPick
+              ? `${replayPick.result.replayIntelligence.note}${allReplay.length > 1 ? ` · Also: ${allReplay.slice(1).map(e => e.runner.horseName).join(", ")}` : ""}`
+              : "No replay upgrade candidate"}
+          />
+        )}
+
+        {/* DANGEROUS FAVOURITE */}
+        <PickCard
+          type="dangerous_fav"
+          entry={dangerFav}
+          reason={dangerFav
+            ? `High volatility risk (${dangerFav.result.volatilityRisk.score}/100) · ${dangerFav.result.volatilityRisk.note}`
+            : undefined}
+          governanceNote={!dangerFav ? "Market favourite not flagged as dangerous" : undefined}
+        />
+      </div>
+
+      {/* ── Governance note (non-extreme) ────────────────────────────────────── */}
+      {!isNoBetRace && blocked.length > 0 && (
+        <div className="mx-4 mb-3 flex items-center gap-2 text-[10px] text-orange-400/70 bg-orange-500/5 border border-orange-500/20 rounded px-3 py-2">
+          <ShieldAlert className="h-3 w-3 shrink-0" />
+          <span>{govNote}</span>
+        </div>
+      )}
+
+      {/* ── Ranked field ─────────────────────────────────────────────────────── */}
+      <div className="border-t border-border/30">
+        <div className="flex items-center gap-2 px-4 py-2.5">
+          <TrendingUp className="h-3.5 w-3.5 text-primary/60" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+            Full Field Ranking — Strongest to Weakest
           </span>
         </div>
 
-        {/* ── Insight chips ── */}
-        <div className="flex flex-wrap gap-1.5 pb-3 border-b border-border/30">
-          <div className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-400 font-semibold">
-            <Star className="h-2.5 w-2.5" />
-            {ranked[0].runner.horseName} · {ranked[0].result.totalScore}
-          </div>
-          {hvPick && hvPick.runner.id !== ranked[0].runner.id && (
-            <div className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full bg-emerald-400/10 border border-emerald-400/30 text-emerald-400 font-semibold">
-              <Eye className="h-2.5 w-2.5" />
-              {hvPick.runner.horseName} HV {hvPick.result.hiddenValue.score}
-            </div>
-          )}
-          {dangerFav && (
-            <div className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full bg-red-400/10 border border-red-400/30 text-red-400 font-semibold">
-              <AlertTriangle className="h-2.5 w-2.5" />
-              Fav at risk: {dangerFav.runner.horseName}
-            </div>
-          )}
-          {replayHorses.length > 0 && (
-            <div className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full bg-purple-400/10 border border-purple-400/30 text-purple-400 font-semibold">
-              <Film className="h-2.5 w-2.5" />
-              {replayHorses.length} replay trigger{replayHorses.length > 1 ? "s" : ""}
-            </div>
-          )}
-        </div>
-      </CardHeader>
-
-      <CardContent className="p-0">
-        {/* ── Engine Selection Output ── */}
-        <EngineSelectionOutput ranked={ranked} />
-
-        {/* ── Ranked list ── */}
         <div className="divide-y divide-border/20">
           {ranked.map(entry => {
             const { runner, result, rank, highlights, triggers, fieldEdge, fieldN, categoryRanks } = entry;
             const rankS = RANK_STYLE[rank];
             const isExpanded = expandedId === runner.id;
 
+            // Confidence label + colour
+            const confLabel = result.confidenceClass.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+            const confColor =
+              result.confidenceClass === "best_of_day"            ? "bg-amber-400/20 text-amber-300 border-amber-400/30" :
+              result.confidenceClass === "top_rated_high_variance" ? "bg-blue-400/20 text-blue-300 border-blue-400/30" :
+              result.confidenceClass === "hidden_value"            ? "bg-emerald-400/20 text-emerald-300 border-emerald-400/30" :
+              result.confidenceClass === "replay_upgrade"          ? "bg-purple-400/20 text-purple-300 border-purple-400/30" :
+              "bg-muted/20 text-muted-foreground/50 border-border/30";
+
             return (
               <div key={runner.id} data-testid={`apex-rank-row-${runner.id}`}>
-                {/* ── Row ── */}
                 <button
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/20 transition-colors text-left"
                   onClick={() => setExpandedId(isExpanded ? null : runner.id)}
-                  data-testid={`apex-rank-toggle-${runner.id}`}
                 >
                   {/* Rank medal */}
-                  <div className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 ${rankS ? rankS.outer : "bg-secondary/30 border-border/30"}`}>
+                  <div className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 ${rankS ? rankS.outer : "bg-secondary/30 border-border/30"}`}>
                     <span className={`text-xs font-bold font-mono ${rankS ? rankS.text : "text-muted-foreground"}`}>{rank}</span>
                   </div>
 
@@ -410,23 +476,31 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm leading-tight">{runner.horseName}</span>
-                      {runner.odds && (
-                        <span className="text-xs font-mono font-semibold text-primary shrink-0">{runner.odds}</span>
-                      )}
-                      <ConfidenceBadge confidenceClass={result.confidenceClass} />
-                      {highlights.map(h => (
-                        <span key={h} className={`hidden sm:inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded border ${HIGHLIGHT_CONFIG[h].style}`}>
-                          {HIGHLIGHT_CONFIG[h].icon}{HIGHLIGHT_CONFIG[h].label}
+                      {runner.odds && <span className="text-xs font-mono font-semibold text-primary shrink-0">{runner.odds}</span>}
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${confColor}`}>{confLabel}</span>
+                      {triggers.length > 0 && (
+                        <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded border text-purple-400 border-purple-400/40 bg-purple-400/10">
+                          <Film className="h-2.5 w-2.5" />Replay Trigger
                         </span>
-                      ))}
+                      )}
+                      {highlights.includes("hidden_value_pick") && (
+                        <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded border text-emerald-400 border-emerald-400/40 bg-emerald-400/10">
+                          <Eye className="h-2.5 w-2.5" />Hidden Value
+                        </span>
+                      )}
+                      {highlights.includes("dangerous_favourite") && (
+                        <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded border text-red-400 border-red-400/40 bg-red-400/10">
+                          <AlertTriangle className="h-2.5 w-2.5" />Danger Fav
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <div className="flex items-center gap-2 mt-0.5">
                       {runner.jockey && <span className="text-[11px] text-muted-foreground">{runner.jockey}</span>}
                       {runner.form && <span className="text-[11px] font-mono text-muted-foreground/50">{runner.form}</span>}
                     </div>
                   </div>
 
-                  {/* Score ring + field edge + expand */}
+                  {/* Score ring + field edge */}
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="text-right hidden sm:block">
                       <span className={`text-[10px] font-mono font-semibold ${fieldEdge >= 0 ? "text-green-400/70" : "text-muted-foreground/40"}`}>
@@ -434,44 +508,29 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
                       </span>
                       <div className="text-[9px] text-muted-foreground/40 leading-none">vs field</div>
                     </div>
-                    <ScoreRing score={result.totalScore} size={46} />
-                    {isExpanded
-                      ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                    <ScoreRing score={result.totalScore} size={44} />
+                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                   </div>
                 </button>
 
-                {/* ── Expanded breakdown ── */}
+                {/* Expanded breakdown */}
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-2 space-y-4 border-t border-border/20 bg-secondary/5">
 
-                    {/* Mobile highlight chips */}
-                    {highlights.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 sm:hidden">
-                        {highlights.map(h => (
-                          <span key={h} className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded border ${HIGHLIGHT_CONFIG[h].style}`}>
-                            {HIGHLIGHT_CONFIG[h].icon}{HIGHLIGHT_CONFIG[h].label}
-                          </span>
-                        ))}
-                      </div>
+                    {/* Classification note */}
+                    {result.classificationNote && (
+                      <p className={`text-xs px-2.5 py-1.5 rounded border-l-2 border-primary/30 bg-primary/5 ${SCORE_COLOR(result.totalScore)}`}>
+                        <span className="font-semibold">{confLabel}: </span>
+                        {result.classificationNote}
+                      </p>
+                    )}
+                    {!isNoBetRace && raceVolatility.blockedClasses.length > 0 && (
+                      <p className="text-[10px] px-2.5 py-1 rounded border-l-2 border-orange-500/30 bg-orange-500/5 text-orange-400/70">
+                        {raceVolatility.governanceNote}
+                      </p>
                     )}
 
-                    {/* Classification + governance */}
-                    <div className="space-y-1.5">
-                      {result.classificationNote && (
-                        <p className={`text-xs px-2.5 py-1.5 rounded border-l-2 border-primary/30 bg-primary/5 ${SCORE_COLOR(result.totalScore)}`}>
-                          <span className="font-semibold">{result.confidenceClass.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}: </span>
-                          {result.classificationNote}
-                        </p>
-                      )}
-                      {raceVolatility.blockedClasses.length > 0 && (
-                        <p className="text-[10px] px-2.5 py-1 rounded border-l-2 border-orange-500/30 bg-orange-500/5 text-orange-400/70">
-                          {raceVolatility.governanceNote}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Field comparison summary */}
+                    {/* Field comparison */}
                     <div className="flex items-center gap-4 text-[10px] bg-secondary/40 rounded-lg px-3 py-2">
                       <span className="text-muted-foreground/60">Field edge:</span>
                       <span className={`font-mono font-semibold ${fieldEdge >= 5 ? "text-green-400" : fieldEdge >= 0 ? "text-amber-400/70" : "text-red-400/60"}`}>
@@ -482,7 +541,7 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
                       <span className="font-mono font-semibold">#{rank} of {fieldN}</span>
                     </div>
 
-                    {/* Category bars with field ranks */}
+                    {/* 7-category bars */}
                     <div className="space-y-2.5">
                       {CATS.map(cat => {
                         const bd = result[cat.key as keyof ApexEngineResult] as ScoreBreakdown;
@@ -523,7 +582,7 @@ export function ApexRaceAnalysis({ racecardInput, runners, raceVolatility }: Pro
             );
           })}
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }
