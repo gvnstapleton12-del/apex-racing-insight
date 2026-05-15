@@ -94,12 +94,12 @@ function UploadZone({ title, description, onUpload, isPending, result, onClear, 
             data-testid={`dropzone-${testId}`}
           >
             <UploadIcon className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">Drop a CSV file here or click to browse</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Comma-separated values (.csv)</p>
+            <p className="text-sm text-muted-foreground">Drop a spreadsheet or CSV file here, or click to browse</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Accepted: .csv, .xlsx, .xls, .tsv</p>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.tsv,.txt"
+              accept=".csv,.tsv,.txt,.xlsx,.xls"
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               data-testid={`input-file-${testId}`}
@@ -205,13 +205,13 @@ export default function Upload() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div>
         <h1 className="text-2xl font-bold tracking-tight mb-1">Upload Centre</h1>
-        <p className="text-muted-foreground text-sm">Ingest racecards and results via CSV spreadsheet.</p>
+        <p className="text-muted-foreground text-sm">Ingest racecards and results via spreadsheet or CSV.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <UploadZone
           title="Races / Racecards"
-          description="Upload CSV with columns: venue, race_date, race_time, race_name, distance, going, class"
+          description="Upload a spreadsheet or CSV with columns: venue, race_date, race_time, race_name, distance, going, class"
           onUpload={handleRacesUpload}
           isPending={uploadRaces.isPending}
           result={racesResult}
@@ -220,7 +220,7 @@ export default function Upload() {
         />
         <UploadZone
           title="Results / Runners"
-          description="Upload CSV with columns: racecard_id, horse_name, jockey, trainer, draw, weight, age, form, odds"
+          description="Upload a spreadsheet or CSV with columns: racecard_id, horse_name, jockey, trainer, draw, weight, age, form, odds"
           onUpload={handleResultsUpload}
           isPending={uploadResults.isPending}
           result={resultsResult}
@@ -231,18 +231,18 @@ export default function Upload() {
 
       <Card className="border-border/50">
         <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-xs text-muted-foreground uppercase tracking-widest">CSV Format Reference</CardTitle>
+          <CardTitle className="text-xs text-muted-foreground uppercase tracking-widest">Spreadsheet / CSV Format Reference</CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-4">
           <div>
-            <p className="text-xs font-semibold text-muted-foreground mb-1">Races CSV example:</p>
+            <p className="text-xs font-semibold text-muted-foreground mb-1">Races example (CSV or spreadsheet columns):</p>
             <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono">
               venue,race_date,race_time,race_name,distance,going,class<br />
               Cheltenham,2026-03-12,14:30,Champion Hurdle,2m,Good to Firm,Grade 1
             </code>
           </div>
           <div>
-            <p className="text-xs font-semibold text-muted-foreground mb-1">Results CSV example:</p>
+            <p className="text-xs font-semibold text-muted-foreground mb-1">Results example (CSV or spreadsheet columns):</p>
             <code className="text-xs text-primary bg-secondary/50 rounded px-2 py-1 block font-mono">
               racecard_id,horse_name,jockey,trainer,draw,weight,age,form,odds<br />
               1,Constitution Hill,N Henderson,N Henderson,3,11-10,7,1111,6/4
