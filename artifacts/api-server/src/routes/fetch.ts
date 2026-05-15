@@ -57,20 +57,32 @@ function normaliseTime(t: string): string {
   return `${t.trim()}:00`;
 }
 
-async function apiGet(path: string, username: string, password: string) {
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function apiGet(path: string, username: string, password: string, retries = 2) {
   const url = `${RACING_API_BASE}${path}`;
   const credentials = Buffer.from(`${username}:${password}`).toString("base64");
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Racing API ${res.status}: ${body}`);
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) await sleep(1500);
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        Accept: "application/json",
+      },
+    });
+    if (res.status === 429) {
+      if (attempt < retries) continue;   // wait and retry
+      const body = await res.text();
+      throw new Error(`Racing API rate limit hit: ${body}`);
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Racing API ${res.status}: ${body}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
   }
-  return res.json() as Promise<Record<string, unknown>>;
+  throw new Error("Racing API: all retries exhausted");
 }
 
 // POST /api/fetch/today
