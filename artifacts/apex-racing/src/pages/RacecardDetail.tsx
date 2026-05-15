@@ -274,6 +274,24 @@ export default function RacecardDetail() {
         )}
       </div>
 
+      {/* ── APEX Race Analysis — top of page ── */}
+      <ApexRaceAnalysis
+        racecardInput={{
+          raceName: racecard.raceName,
+          distance: racecard.distance,
+          going: racecard.going,
+          raceClass: racecard.raceClass,
+          prize: racecard.prize,
+          trackProfile: racecard.trackProfile,
+          marketContext: racecard.marketContext,
+          trainerComments: racecard.trainerComments,
+          nonRunners: racecard.nonRunners,
+          fieldSize: runners.filter(r => !r.isNonRunner && !r.scratched).length || 1,
+        }}
+        runners={runners}
+        raceVolatility={raceVolatility}
+      />
+
       {/* Contextual Intelligence */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {[
@@ -302,24 +320,6 @@ export default function RacecardDetail() {
           <EditableField field="calibrationNote" value={racecard.calibrationNote ?? null} multiline />
         </CardContent>
       </Card>
-
-      {/* ── APEX Race Analysis ── */}
-      <ApexRaceAnalysis
-        racecardInput={{
-          raceName: racecard.raceName,
-          distance: racecard.distance,
-          going: racecard.going,
-          raceClass: racecard.raceClass,
-          prize: racecard.prize,
-          trackProfile: racecard.trackProfile,
-          marketContext: racecard.marketContext,
-          trainerComments: racecard.trainerComments,
-          nonRunners: racecard.nonRunners,
-          fieldSize: runners.filter(r => !r.isNonRunner && !r.scratched).length || 1,
-        }}
-        runners={runners}
-        raceVolatility={raceVolatility}
-      />
 
       {/* Runners */}
       <div className="flex items-center justify-between">
