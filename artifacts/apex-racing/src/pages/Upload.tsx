@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
   useUploadRaces,
   useUploadResults,
@@ -25,6 +26,18 @@ function parseCSV(text: string): ParsedRow[] {
   });
 }
 
+function parseExcel(buffer: ArrayBuffer): ParsedRow[] {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  return raw.map(r =>
+    Object.fromEntries(
+      Object.entries(r).map(([k, v]) => [String(k).trim(), String(v ?? "")])
+    )
+  );
+}
+
 interface UploadZoneProps {
   title: string;
   description: string;
@@ -40,16 +53,31 @@ function UploadZone({ title, description, onUpload, isPending, result, onClear, 
   const [preview, setPreview] = useState<ParsedRow[] | null>(null);
   const [filename, setFilename] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const handleFile = (file: File) => {
     setFilename(file.name);
+    setParseError(null);
+    const isExcel = /\.(xlsx|xls)$/i.test(file.name);
     const reader = new FileReader();
     reader.onload = e => {
-      const text = e.target?.result as string;
-      const rows = parseCSV(text);
-      setPreview(rows);
+      try {
+        if (isExcel) {
+          const rows = parseExcel(e.target?.result as ArrayBuffer);
+          setPreview(rows);
+        } else {
+          const rows = parseCSV(e.target?.result as string);
+          setPreview(rows);
+        }
+      } catch (err) {
+        setParseError(`Could not read file: ${String(err)}`);
+      }
     };
-    reader.readAsText(file);
+    if (isExcel) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -66,6 +94,7 @@ function UploadZone({ title, description, onUpload, isPending, result, onClear, 
   const clear = () => {
     setPreview(null);
     setFilename("");
+    setParseError(null);
     onClear();
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -85,26 +114,34 @@ function UploadZone({ title, description, onUpload, isPending, result, onClear, 
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-4">
         {!preview && !result && (
-          <div
-            className="border-2 border-dashed border-border rounded-md p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileRef.current?.click()}
-            data-testid={`dropzone-${testId}`}
-          >
-            <UploadIcon className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">Drop a spreadsheet or CSV file here, or click to browse</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Accepted: .csv, .xlsx, .xls, .tsv</p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv,.tsv,.txt,.xlsx,.xls"
-              className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-              data-testid={`input-file-${testId}`}
-            />
-          </div>
+          <>
+            <div
+              className="border-2 border-dashed border-border rounded-md p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileRef.current?.click()}
+              data-testid={`dropzone-${testId}`}
+            >
+              <UploadIcon className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+              <p className="text-sm text-muted-foreground">Drop a spreadsheet or CSV file here, or click to browse</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Accepted: .csv, .xlsx, .xls, .tsv</p>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv,.tsv,.txt,.xlsx,.xls"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                data-testid={`input-file-${testId}`}
+              />
+            </div>
+            {parseError && (
+              <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2">
+                <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+                <p className="text-xs text-red-400">{parseError}</p>
+              </div>
+            )}
+          </>
         )}
 
         {preview && !result && (
