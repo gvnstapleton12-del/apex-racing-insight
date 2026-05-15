@@ -12,14 +12,25 @@ interface ApiRunner {
   horse_id?: string;
   jockey?: string;
   trainer?: string;
-  number?: number;
-  draw?: number;
-  age?: string;
-  weight_lbs?: number;
+  number?: unknown;
+  draw?: unknown;
+  age?: unknown;
+  weight_lbs?: unknown;
   form?: string;
-  official_rating?: string;
+  official_rating?: unknown;
   sp?: string | null;
   non_runner?: boolean;
+}
+
+function toInt(v: unknown): number | undefined {
+  if (v == null) return undefined;
+  const n = parseInt(String(v), 10);
+  return isNaN(n) ? undefined : n;
+}
+
+function toStr(v: unknown): string {
+  if (v == null) return "";
+  return String(v).trim();
 }
 
 interface ApiRacecard {
@@ -197,16 +208,31 @@ router.post("/fetch/today", async (req, res): Promise<void> => {
           continue;
         }
         try {
+          const draw    = toInt(runner.draw) ?? toInt(runner.number);
+          const weightLbs = toInt(runner.weight_lbs);
+          const age     = runner.age != null ? toStr(runner.age) : undefined;
+          const odds    = runner.official_rating != null
+            ? toStr(runner.official_rating)
+            : (runner.sp != null ? toStr(runner.sp) : undefined);
+
+          // Skip if already inserted (re-fetch of same day)
+          const [dup] = await db
+            .select({ id: runnersTable.id })
+            .from(runnersTable)
+            .where(and(eq(runnersTable.racecardId, racecardId), eq(runnersTable.horseName, horseName)))
+            .limit(1);
+          if (dup) continue;
+
           await db.insert(runnersTable).values({
             racecardId,
             horseName,
-            jockey:  runner.jockey  ?? "",
-            trainer: runner.trainer ?? "",
-            weight:  runner.weight_lbs != null ? `${runner.weight_lbs}lbs` : "",
-            draw:    runner.draw   ?? runner.number ?? undefined,
-            age:     runner.age    ?? undefined,
-            form:    runner.form   ?? undefined,
-            odds:    runner.official_rating ?? runner.sp ?? undefined,
+            jockey:  toStr(runner.jockey),
+            trainer: toStr(runner.trainer),
+            weight:  weightLbs != null ? `${weightLbs}lbs` : "",
+            draw,
+            age,
+            form:    runner.form ?? undefined,
+            odds,
             isNonRunner: false,
             scratched:   false,
           });
