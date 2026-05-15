@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { detectReplayTriggers, type DetectedTrigger } from "@/lib/replayTriggers";
 import { computeRaceVolatility, type RaceVolatilityResult } from "@/lib/apexEngine";
+import { ApexRaceAnalysis } from "@/components/ApexRaceAnalysis";
 
 function ReplayTriggerBadges({ triggers }: { triggers: DetectedTrigger[] }) {
   if (triggers.length === 0) return null;
@@ -301,6 +302,24 @@ export default function RacecardDetail() {
           <EditableField field="calibrationNote" value={racecard.calibrationNote ?? null} multiline />
         </CardContent>
       </Card>
+
+      {/* ── APEX Race Analysis ── */}
+      <ApexRaceAnalysis
+        racecardInput={{
+          raceName: racecard.raceName,
+          distance: racecard.distance,
+          going: racecard.going,
+          raceClass: racecard.raceClass,
+          prize: racecard.prize,
+          trackProfile: racecard.trackProfile,
+          marketContext: racecard.marketContext,
+          trainerComments: racecard.trainerComments,
+          nonRunners: racecard.nonRunners,
+          fieldSize: runners.filter(r => !r.isNonRunner && !r.scratched).length || 1,
+        }}
+        runners={runners}
+        raceVolatility={raceVolatility}
+      />
 
       {/* Runners */}
       <div className="flex items-center justify-between">
