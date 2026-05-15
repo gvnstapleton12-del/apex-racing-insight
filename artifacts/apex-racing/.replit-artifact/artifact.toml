@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "APEX Racing Analyst"
+version = "1.0.0"
+id = "artifacts/apex-racing"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21887
+
+[services.development]
+run = "pnpm --filter @workspace/apex-racing run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/apex-racing", "run", "build" ]
+publicDir = "artifacts/apex-racing/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21887"
+BASE_PATH = "/"

@@ -1,22 +1,35 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: APEX Racing Analyst API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: racecards
+    description: Race card management
+  - name: horses
+    description: Horse profile management
+  - name: runners
+    description: Race runner management
+  - name: scores
+    description: APEX predictor scoring
+  - name: notes
+    description: Replay and memory notes
+  - name: calibration
+    description: Daily calibration dashboard
+  - name: uploads
+    description: Spreadsheet upload
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +37,534 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /racecards:
+    get:
+      operationId: listRacecards
+      tags: [racecards]
+      summary: List all racecards
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: venue
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: List of racecards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Racecard"
+    post:
+      operationId: createRacecard
+      tags: [racecards]
+      summary: Create a new racecard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RacecardInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Racecard"
+
+  /racecards/{id}:
+    get:
+      operationId: getRacecard
+      tags: [racecards]
+      summary: Get a racecard by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Racecard detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Racecard"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateRacecard
+      tags: [racecards]
+      summary: Update a racecard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RacecardUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Racecard"
+    delete:
+      operationId: deleteRacecard
+      tags: [racecards]
+      summary: Delete a racecard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /racecards/{id}/runners:
+    get:
+      operationId: listRunners
+      tags: [runners]
+      summary: List runners for a racecard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Runners list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Runner"
+
+  /runners:
+    post:
+      operationId: createRunner
+      tags: [runners]
+      summary: Add a runner to a race
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunnerInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Runner"
+
+  /runners/{id}:
+    get:
+      operationId: getRunner
+      tags: [runners]
+      summary: Get a runner by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Runner detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Runner"
+    patch:
+      operationId: updateRunner
+      tags: [runners]
+      summary: Update a runner
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunnerUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Runner"
+    delete:
+      operationId: deleteRunner
+      tags: [runners]
+      summary: Delete / scratch a runner
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /horses:
+    get:
+      operationId: listHorses
+      tags: [horses]
+      summary: List all horse profiles
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Horse profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Horse"
+    post:
+      operationId: createHorse
+      tags: [horses]
+      summary: Create a horse profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HorseInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Horse"
+
+  /horses/{id}:
+    get:
+      operationId: getHorse
+      tags: [horses]
+      summary: Get horse profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Horse profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Horse"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateHorse
+      tags: [horses]
+      summary: Update horse profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HorseUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Horse"
+
+  /horses/{id}/notes:
+    get:
+      operationId: listHorseNotes
+      tags: [notes]
+      summary: Get all notes for a horse
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HorseNote"
+    post:
+      operationId: createHorseNote
+      tags: [notes]
+      summary: Add a note for a horse
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HorseNoteInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HorseNote"
+
+  /notes/{id}:
+    patch:
+      operationId: updateNote
+      tags: [notes]
+      summary: Update a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HorseNoteUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HorseNote"
+    delete:
+      operationId: deleteNote
+      tags: [notes]
+      summary: Delete a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /scores:
+    get:
+      operationId: listScores
+      tags: [scores]
+      summary: List APEX scores for a runner
+      parameters:
+        - name: runnerId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: racecardId
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Scores list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApexScore"
+    post:
+      operationId: createScore
+      tags: [scores]
+      summary: Create or update APEX score for a runner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApexScoreInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApexScore"
+
+  /scores/{id}:
+    patch:
+      operationId: updateScore
+      tags: [scores]
+      summary: Update APEX score
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApexScoreUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApexScore"
+
+  /calibration:
+    get:
+      operationId: getDailyCalibration
+      tags: [calibration]
+      summary: Get daily calibration dashboard data
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Calibration dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalibrationDashboard"
+    post:
+      operationId: saveCalibrationEntry
+      tags: [calibration]
+      summary: Save a calibration entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalibrationEntryInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalibrationEntry"
+
+  /upload/races:
+    post:
+      operationId: uploadRaces
+      tags: [uploads]
+      summary: Upload races CSV/spreadsheet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInput"
+      responses:
+        "200":
+          description: Upload result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+
+  /upload/results:
+    post:
+      operationId: uploadResults
+      tags: [uploads]
+      summary: Upload race results CSV/spreadsheet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInput"
+      responses:
+        "200":
+          description: Upload result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [calibration]
+      summary: Get top-level dashboard summary stats
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /racecards/{id}/analysis:
+    get:
+      operationId: getRacecardAnalysis
+      tags: [racecards]
+      summary: Get full analysis for a race (runners + scores + confidence classifications)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full race analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RaceAnalysis"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +575,629 @@ components:
       required:
         - status
 
+    Racecard:
+      type: object
+      required: [id, venue, raceDate, raceTime, raceName, distance, going, raceClass]
+      properties:
+        id:
+          type: integer
+        venue:
+          type: string
+        raceDate:
+          type: string
+        raceTime:
+          type: string
+        raceName:
+          type: string
+        distance:
+          type: string
+        going:
+          type: string
+        raceClass:
+          type: string
+        prize:
+          type: ["string", "null"]
+        trackProfile:
+          type: ["string", "null"]
+        marketContext:
+          type: ["string", "null"]
+        trainerComments:
+          type: ["string", "null"]
+        nonRunners:
+          type: ["string", "null"]
+        calibrationNote:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    RacecardInput:
+      type: object
+      required: [venue, raceDate, raceTime, raceName, distance, going, raceClass]
+      properties:
+        venue:
+          type: string
+        raceDate:
+          type: string
+        raceTime:
+          type: string
+        raceName:
+          type: string
+        distance:
+          type: string
+        going:
+          type: string
+        raceClass:
+          type: string
+        prize:
+          type: string
+        trackProfile:
+          type: string
+        marketContext:
+          type: string
+        trainerComments:
+          type: string
+        nonRunners:
+          type: string
+        calibrationNote:
+          type: string
+
+    RacecardUpdate:
+      type: object
+      properties:
+        venue:
+          type: string
+        raceDate:
+          type: string
+        raceTime:
+          type: string
+        raceName:
+          type: string
+        distance:
+          type: string
+        going:
+          type: string
+        raceClass:
+          type: string
+        prize:
+          type: string
+        trackProfile:
+          type: string
+        marketContext:
+          type: string
+        trainerComments:
+          type: string
+        nonRunners:
+          type: string
+        calibrationNote:
+          type: string
+
+    Runner:
+      type: object
+      required: [id, racecardId, horseName, jockey, trainer, draw, weight]
+      properties:
+        id:
+          type: integer
+        racecardId:
+          type: integer
+        horseId:
+          type: ["integer", "null"]
+        horseName:
+          type: string
+        jockey:
+          type: string
+        trainer:
+          type: string
+        draw:
+          type: ["integer", "null"]
+        weight:
+          type: string
+        age:
+          type: ["string", "null"]
+        form:
+          type: ["string", "null"]
+        odds:
+          type: ["string", "null"]
+        isNonRunner:
+          type: boolean
+        scratched:
+          type: boolean
+        createdAt:
+          type: string
+
+    RunnerInput:
+      type: object
+      required: [racecardId, horseName, jockey, trainer, weight]
+      properties:
+        racecardId:
+          type: integer
+        horseId:
+          type: ["integer", "null"]
+        horseName:
+          type: string
+        jockey:
+          type: string
+        trainer:
+          type: string
+        draw:
+          type: ["integer", "null"]
+        weight:
+          type: string
+        age:
+          type: string
+        form:
+          type: string
+        odds:
+          type: string
+        isNonRunner:
+          type: boolean
+        scratched:
+          type: boolean
+
+    RunnerUpdate:
+      type: object
+      properties:
+        horseName:
+          type: string
+        jockey:
+          type: string
+        trainer:
+          type: string
+        draw:
+          type: ["integer", "null"]
+        weight:
+          type: string
+        age:
+          type: string
+        form:
+          type: string
+        odds:
+          type: string
+        isNonRunner:
+          type: boolean
+        scratched:
+          type: boolean
+
+    Horse:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        trainer:
+          type: ["string", "null"]
+        owner:
+          type: ["string", "null"]
+        age:
+          type: ["integer", "null"]
+        sex:
+          type: ["string", "null"]
+        colour:
+          type: ["string", "null"]
+        sire:
+          type: ["string", "null"]
+        dam:
+          type: ["string", "null"]
+        preferredGoing:
+          type: ["string", "null"]
+        preferredDistance:
+          type: ["string", "null"]
+        trackSpecialistNotes:
+          type: ["string", "null"]
+        behaviourProfile:
+          type: ["string", "null"]
+        memoryNotes:
+          type: ["string", "null"]
+        replayNotes:
+          type: ["string", "null"]
+        hiddenValueFlags:
+          type: ["string", "null"]
+        volatilityRating:
+          type: ["string", "null"]
+        totalRuns:
+          type: ["integer", "null"]
+        wins:
+          type: ["integer", "null"]
+        places:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    HorseInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        trainer:
+          type: string
+        owner:
+          type: string
+        age:
+          type: ["integer", "null"]
+        sex:
+          type: string
+        colour:
+          type: string
+        sire:
+          type: string
+        dam:
+          type: string
+        preferredGoing:
+          type: string
+        preferredDistance:
+          type: string
+        trackSpecialistNotes:
+          type: string
+        behaviourProfile:
+          type: string
+        memoryNotes:
+          type: string
+        replayNotes:
+          type: string
+        hiddenValueFlags:
+          type: string
+        volatilityRating:
+          type: string
+        totalRuns:
+          type: ["integer", "null"]
+        wins:
+          type: ["integer", "null"]
+        places:
+          type: ["integer", "null"]
+
+    HorseUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        trainer:
+          type: string
+        owner:
+          type: string
+        age:
+          type: ["integer", "null"]
+        sex:
+          type: string
+        colour:
+          type: string
+        sire:
+          type: string
+        dam:
+          type: string
+        preferredGoing:
+          type: string
+        preferredDistance:
+          type: string
+        trackSpecialistNotes:
+          type: string
+        behaviourProfile:
+          type: string
+        memoryNotes:
+          type: string
+        replayNotes:
+          type: string
+        hiddenValueFlags:
+          type: string
+        volatilityRating:
+          type: string
+        totalRuns:
+          type: ["integer", "null"]
+        wins:
+          type: ["integer", "null"]
+        places:
+          type: ["integer", "null"]
+
+    HorseNote:
+      type: object
+      required: [id, horseId, noteType, content]
+      properties:
+        id:
+          type: integer
+        horseId:
+          type: integer
+        noteType:
+          type: string
+          description: "Type: memory | replay | track | context | trainer | market"
+        content:
+          type: string
+        raceRef:
+          type: ["string", "null"]
+        venue:
+          type: ["string", "null"]
+        date:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    HorseNoteInput:
+      type: object
+      required: [noteType, content]
+      properties:
+        noteType:
+          type: string
+        content:
+          type: string
+        raceRef:
+          type: string
+        venue:
+          type: string
+        date:
+          type: string
+
+    HorseNoteUpdate:
+      type: object
+      properties:
+        noteType:
+          type: string
+        content:
+          type: string
+        raceRef:
+          type: string
+        venue:
+          type: string
+        date:
+          type: string
+
+    ApexScore:
+      type: object
+      required: [id, runnerId, racecardId, abilityScore, paceFitScore, tacticalResilienceScore, groundTripScore, replayIntelligenceScore, hiddenValueScore, volatilityRisk, totalScore, confidenceClass]
+      properties:
+        id:
+          type: integer
+        runnerId:
+          type: integer
+        racecardId:
+          type: integer
+        abilityScore:
+          type: number
+          description: "0-100 Ability rating"
+        paceFitScore:
+          type: number
+          description: "0-100 Pace fit"
+        tacticalResilienceScore:
+          type: number
+          description: "0-100 Tactical resilience"
+        groundTripScore:
+          type: number
+          description: "0-100 Ground/trip suitability"
+        replayIntelligenceScore:
+          type: number
+          description: "0-100 Replay intelligence"
+        hiddenValueScore:
+          type: number
+          description: "0-100 Hidden value"
+        volatilityRisk:
+          type: number
+          description: "0-100 Volatility risk (lower is better)"
+        totalScore:
+          type: number
+          description: "Computed composite APEX score"
+        confidenceClass:
+          type: string
+          description: "best_of_day | top_rated_high_variance | hidden_value | replay_upgrade | no_bet"
+        analystNotes:
+          type: ["string", "null"]
+        replayContext:
+          type: ["string", "null"]
+        contextualIntelligence:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ApexScoreInput:
+      type: object
+      required: [runnerId, racecardId, abilityScore, paceFitScore, tacticalResilienceScore, groundTripScore, replayIntelligenceScore, hiddenValueScore, volatilityRisk, confidenceClass]
+      properties:
+        runnerId:
+          type: integer
+        racecardId:
+          type: integer
+        abilityScore:
+          type: number
+        paceFitScore:
+          type: number
+        tacticalResilienceScore:
+          type: number
+        groundTripScore:
+          type: number
+        replayIntelligenceScore:
+          type: number
+        hiddenValueScore:
+          type: number
+        volatilityRisk:
+          type: number
+        confidenceClass:
+          type: string
+        analystNotes:
+          type: string
+        replayContext:
+          type: string
+        contextualIntelligence:
+          type: string
+
+    ApexScoreUpdate:
+      type: object
+      properties:
+        abilityScore:
+          type: number
+        paceFitScore:
+          type: number
+        tacticalResilienceScore:
+          type: number
+        groundTripScore:
+          type: number
+        replayIntelligenceScore:
+          type: number
+        hiddenValueScore:
+          type: number
+        volatilityRisk:
+          type: number
+        confidenceClass:
+          type: string
+        analystNotes:
+          type: string
+        replayContext:
+          type: string
+        contextualIntelligence:
+          type: string
+
+    CalibrationDashboard:
+      type: object
+      required: [date, entries, summary]
+      properties:
+        date:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalibrationEntry"
+        summary:
+          $ref: "#/components/schemas/CalibrationSummary"
+
+    CalibrationEntry:
+      type: object
+      required: [id, date, racecardId, predictedClass, outcome]
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+        racecardId:
+          type: integer
+        runnerId:
+          type: ["integer", "null"]
+        predictedClass:
+          type: string
+        outcome:
+          type: string
+          description: "win | place | unplaced | non_runner"
+        apexScore:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    CalibrationEntryInput:
+      type: object
+      required: [date, racecardId, predictedClass, outcome]
+      properties:
+        date:
+          type: string
+        racecardId:
+          type: integer
+        runnerId:
+          type: ["integer", "null"]
+        predictedClass:
+          type: string
+        outcome:
+          type: string
+        apexScore:
+          type: ["number", "null"]
+        notes:
+          type: string
+
+    CalibrationSummary:
+      type: object
+      required: [totalPredictions, wins, places, unplaced, strikeRate, placeRate]
+      properties:
+        totalPredictions:
+          type: integer
+        wins:
+          type: integer
+        places:
+          type: integer
+        unplaced:
+          type: integer
+        strikeRate:
+          type: number
+        placeRate:
+          type: number
+        bestOfDayRecord:
+          type: string
+        hiddenValueRecord:
+          type: string
+
+    DashboardSummary:
+      type: object
+      required: [totalRacecards, totalHorses, totalRunners, recentRaces, confidenceBreakdown]
+      properties:
+        totalRacecards:
+          type: integer
+        totalHorses:
+          type: integer
+        totalRunners:
+          type: integer
+        recentRaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/Racecard"
+        confidenceBreakdown:
+          type: object
+          properties:
+            bestOfDay:
+              type: integer
+            topRatedHighVariance:
+              type: integer
+            hiddenValue:
+              type: integer
+            replayUpgrade:
+              type: integer
+            noBet:
+              type: integer
+          required: [bestOfDay, topRatedHighVariance, hiddenValue, replayUpgrade, noBet]
+        todayRaceCount:
+          type: integer
+
+    RaceAnalysis:
+      type: object
+      required: [racecard, runners, scores]
+      properties:
+        racecard:
+          $ref: "#/components/schemas/Racecard"
+        runners:
+          type: array
+          items:
+            $ref: "#/components/schemas/Runner"
+        scores:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApexScore"
+        topPick:
+          $ref: "#/components/schemas/Runner"
+        contextualSummary:
+          type: ["string", "null"]
+
+    UploadInput:
+      type: object
+      required: [filename, data]
+      properties:
+        filename:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+
+    UploadResult:
+      type: object
+      required: [success, rowsProcessed, rowsInserted, errors]
+      properties:
+        success:
+          type: boolean
+        rowsProcessed:
+          type: integer
+        rowsInserted:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
