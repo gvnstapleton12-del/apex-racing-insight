@@ -97,16 +97,16 @@ export default function Racecards() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight mb-1">Racecards</h1>
-          <p className="text-muted-foreground text-sm">Structured race intelligence by meeting.</p>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight mb-0.5">Racecards</h1>
+          <p className="text-muted-foreground text-sm hidden sm:block">Structured race intelligence by meeting.</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="button-create-racecard" className="gap-2">
-              <Plus className="h-4 w-4" /> New Racecard
+            <Button data-testid="button-create-racecard" className="gap-2 shrink-0" size="sm">
+              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">New Racecard</span><span className="sm:hidden">New</span>
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
@@ -163,29 +163,31 @@ export default function Racecards() {
         </Dialog>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             data-testid="input-search-racecards"
             className="pl-9"
-            placeholder="Search venue or race name..."
+            placeholder="Search venue or race…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <Input
-          data-testid="input-filter-date"
-          type="date"
-          className="w-44"
-          value={dateFilter}
-          onChange={e => setDateFilter(e.target.value)}
-        />
-        {dateFilter && (
-          <Button variant="outline" onClick={() => setDateFilter("")} data-testid="button-clear-date">
-            Clear
-          </Button>
-        )}
+        <div className="flex gap-2">
+          <Input
+            data-testid="input-filter-date"
+            type="date"
+            className="flex-1 sm:w-40"
+            value={dateFilter}
+            onChange={e => setDateFilter(e.target.value)}
+          />
+          {dateFilter && (
+            <Button variant="outline" onClick={() => setDateFilter("")} data-testid="button-clear-date" className="shrink-0">
+              Clear
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -208,37 +210,48 @@ export default function Racecards() {
               <div className="grid gap-2">
                 {grouped[date].map(race => (
                   <Card key={race.id} className="group hover:border-primary/40 transition-colors" data-testid={`card-racecard-${race.id}`}>
-                    <CardContent className="flex items-center justify-between p-4">
-                      <div className="flex items-center gap-4">
-                        <div className="text-lg font-mono font-bold text-primary w-16">{race.raceTime}</div>
-                        <div>
-                          <div className="font-semibold text-sm">{race.venue} — {race.raceName}</div>
-                          <div className="text-xs text-muted-foreground flex gap-3 mt-0.5">
-                            <span>{race.distance}</span>
-                            <span>{race.going}</span>
-                            <span>{race.raceClass}</span>
-                            {race.prize && <span>{race.prize}</span>}
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        {/* Left: time + info */}
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="text-base font-mono font-bold text-primary shrink-0 pt-0.5 w-12">
+                            {race.raceTime}
                           </div>
-                          {race.nonRunners && (
-                            <div className="text-xs text-orange-400 mt-0.5">NR: {race.nonRunners}</div>
-                          )}
+                          <div className="min-w-0">
+                            <div className="font-semibold text-sm leading-snug">
+                              {race.venue}
+                              <span className="text-muted-foreground font-normal"> — </span>
+                              <span className="break-words">{race.raceName}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                              {race.distance && <span>{race.distance}</span>}
+                              {race.going && <span>{race.going}</span>}
+                              {race.raceClass && <span>Class {race.raceClass}</span>}
+                              {race.prize && <span>{race.prize}</span>}
+                            </div>
+                            {race.nonRunners && (
+                              <div className="text-xs text-orange-400 mt-0.5 break-words">NR: {race.nonRunners}</div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(race.id)}
-                          data-testid={`button-delete-racecard-${race.id}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Link href={`/racecards/${race.id}`}>
-                          <Button variant="outline" size="sm" className="gap-1" data-testid={`button-view-racecard-${race.id}`}>
-                            Analyse <ChevronRight className="h-3 w-3" />
+                        {/* Right: actions */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(race.id)}
+                            data-testid={`button-delete-racecard-${race.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
-                        </Link>
+                          <Link href={`/racecards/${race.id}`}>
+                            <Button variant="outline" size="sm" className="gap-1 h-8 text-xs px-2.5" data-testid={`button-view-racecard-${race.id}`}>
+                              <span className="hidden sm:inline">Analyse</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </Button>
+                          </Link>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
