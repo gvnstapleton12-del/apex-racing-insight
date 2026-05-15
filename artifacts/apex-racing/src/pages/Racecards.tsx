@@ -18,6 +18,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, Plus, Search, Trash2, ChevronRight, Calendar, Flag } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { RaceApexQuickPick } from "@/components/RaceApexQuickPick";
 
 const createSchema = z.object({
   venue: z.string().min(1),
@@ -240,6 +241,18 @@ export default function Racecards() {
                             {race.nonRunners && (
                               <div className="text-xs text-orange-400 mt-0.5 break-words">NR: {race.nonRunners}</div>
                             )}
+                            <RaceApexQuickPick
+                              racecardId={race.id}
+                              raceName={race.raceName}
+                              distance={race.distance}
+                              going={race.going}
+                              raceClass={race.raceClass}
+                              prize={race.prize}
+                              trackProfile={race.trackProfile}
+                              marketContext={race.marketContext}
+                              trainerComments={race.trainerComments}
+                              nonRunners={race.nonRunners}
+                            />
                           </div>
                         </div>
                         {/* Right: actions */}
