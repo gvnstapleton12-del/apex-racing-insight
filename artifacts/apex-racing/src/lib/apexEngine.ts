@@ -713,7 +713,7 @@ export function computeRaceVolatility(racecard: RacecardInput): RaceVolatilityRe
     tier = "extreme";
     label = "Extreme Volatility";
     blockedClasses = ["best_of_day", "top_rated_high_variance"];
-    governanceNote = `Race environment score ${finalScore}/100 — highly unpredictable. Best Of Day and Top Rated / High Variance classifications are blocked. Only Hidden Value, Replay Upgrade, or No Bet permitted.`;
+    governanceNote = `Race environment score ${finalScore}/100 — highly unpredictable. Best Of Day and Top Rated are blocked. Only Each Way Value or No Bet permitted.`;
   } else if (finalScore >= 45) {
     tier = "high";
     label = "High Volatility";
@@ -735,45 +735,68 @@ export function computeRaceVolatility(racecard: RacecardInput): RaceVolatilityRe
 }
 
 // ── Classification with governance ───────────────────────────────────────────
+// Replay Intelligence, Hidden Value, Pace Fit, Tactical Resilience, Ground/Trip,
+// and Market Context are SCORING INPUTS that feed the final total score.
+// The classification ladder below operates solely on that final score + governance.
+
+function parseOddsDecimalEngine(odds: string | null | undefined): number | null {
+  if (!odds) return null;
+  const s = odds.trim().toLowerCase();
+  if (s === "evs" || s === "evens") return 2.0;
+  const sl = s.indexOf("/");
+  if (sl !== -1) {
+    const n = parseFloat(s.slice(0, sl)), d = parseFloat(s.slice(sl + 1));
+    if (!isNaN(n) && !isNaN(d) && d > 0) return n / d + 1;
+  }
+  const dec = parseFloat(s);
+  return isNaN(dec) ? null : dec;
+}
 
 function classifyScore(
   total: number,
   ability: number,
   hidden: number,
-  replay: number,
   volatility: number,
-  raceVolatility: RaceVolatilityResult
+  raceVolatility: RaceVolatilityResult,
+  oddsDecimal: number | null
 ): { cls: string; note: string } {
   const blocked = raceVolatility.blockedClasses;
   const minBestOfDay = raceVolatility.tier === "medium" ? 73 : 72;
-
   const allow = (cls: string) => !blocked.includes(cls);
 
+  // ── Tier 1: Best Of Day — high composite, controlled runner volatility ──────
   if (total >= minBestOfDay && volatility <= 42 && allow("best_of_day")) {
     return { cls: "best_of_day", note: `Strong composite score (${total}) with controlled volatility (${volatility}) — highest confidence selection` };
   }
-  // Would have been best_of_day but race governance blocks it
+  // Tier 1 blocked by race governance → cap at Top Rated
   if (total >= minBestOfDay && !allow("best_of_day") && allow("top_rated_high_variance")) {
-    return { cls: "top_rated_high_variance", note: `Score ${total} qualifies for Best Of Day but ${raceVolatility.label} blocks it — capped at Top Rated / High Variance` };
+    return { cls: "top_rated_high_variance", note: `Score ${total} qualifies but ${raceVolatility.label} blocks Best Of Day — capped at Top Rated` };
   }
+  // Tier 1 fully blocked
   if (total >= minBestOfDay && !allow("best_of_day") && !allow("top_rated_high_variance")) {
-    return { cls: "no_bet", note: `Score ${total} qualifies for Best Of Day but ${raceVolatility.label} blocks both top classifications` };
+    return { cls: "no_bet", note: `Score ${total} qualifies for Best Of Day but ${raceVolatility.label} blocks all top classifications` };
   }
+
+  // ── Tier 2: Top Rated / High Variance — strong score, elevated runner risk ─
   if (total >= 65 && volatility > 48 && allow("top_rated_high_variance")) {
-    return { cls: "top_rated_high_variance", note: `High ability score (${ability}) but elevated volatility (${volatility}) — capable but unpredictable` };
+    return { cls: "top_rated_high_variance", note: `High composite score (${ability}) with elevated runner volatility (${volatility}) — capable but unpredictable` };
   }
-  if (hidden >= 70 && total >= 50) {
-    return { cls: "hidden_value", note: `Hidden Value indicator (${hidden}) elevated — market may be underestimating this runner` };
-  }
-  if (replay >= 70 && total >= 50) {
-    return { cls: "replay_upgrade", note: `Replay Intelligence score (${replay}) suggests performance better than form shows` };
-  }
+
+  // ── Tier 3: Best Of Day at lower threshold (60–72 range, stable race) ──────
   if (total >= 60 && volatility <= 50 && allow("best_of_day")) {
     return { cls: "best_of_day", note: `Solid all-round score (${total}) — reliable selection candidate` };
   }
   if (total >= 60 && !allow("best_of_day") && allow("top_rated_high_variance")) {
     return { cls: "top_rated_high_variance", note: `Score ${total} capped by ${raceVolatility.label} — race environment limits confidence` };
   }
+
+  // ── Tier 4: Each Way Value — moderate score, hidden component elevated, ─────
+  //           market-friendly odds (the score already incorporates Replay + HV)
+  if (total >= 50 && hidden >= 62 && (oddsDecimal === null || oddsDecimal >= 3.0)) {
+    return { cls: "each_way_value", note: `Composite score ${total} with elevated hidden value component (${hidden}) — each-way potential at these odds` };
+  }
+
+  // ── No Bet ────────────────────────────────────────────────────────────────
   return { cls: "no_bet", note: `Total score ${total} — insufficient evidence for a confident selection` };
 }
 
@@ -792,9 +815,10 @@ export function runApexEngine(runner: RunnerInput, racecard: RacecardInput): Ape
     groundTrip.score, replayIntelligence.score, hiddenValue.score, volatilityRisk.score
   );
 
+  const oddsDecimal = parseOddsDecimalEngine(runner.odds);
   const { cls, note: classificationNote } = classifyScore(
-    totalScore, ability.score, hiddenValue.score, replayIntelligence.score,
-    volatilityRisk.score, raceVolatility
+    totalScore, ability.score, hiddenValue.score,
+    volatilityRisk.score, raceVolatility, oddsDecimal
   );
 
   return {

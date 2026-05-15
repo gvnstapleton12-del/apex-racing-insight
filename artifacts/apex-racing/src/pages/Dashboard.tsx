@@ -45,13 +45,11 @@ interface AvoidEntry {
 }
 
 interface DayBoard {
-  betOfDay:       ScoredPick | null;   // single elected horse — highest-scoring BOD only
-  bestOfDay:      ScoredPick[];        // all other best_of_day qualifiers, ranked
-  topRated:       ScoredPick[];        // engine top_rated_high_variance
-  eachWayValue:   ScoredPick[];
-  replayUpgrades: ScoredPick[];
-  hiddenValue:    ScoredPick[];
-  avoidRaces:     AvoidEntry[];
+  betOfDay:     ScoredPick | null;  // single elected horse — highest-scoring BOD only
+  bestOfDay:    ScoredPick[];       // all other best_of_day qualifiers, ranked
+  topRated:     ScoredPick[];       // top_rated_high_variance from engine
+  eachWayValue: ScoredPick[];       // each_way_value from engine
+  avoidRaces:   AvoidEntry[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -77,22 +75,6 @@ const CONF_STYLE: Record<string, { chip: string; label: string }> = {
   no_bet:                  { chip: "bg-muted/20 text-muted-foreground/50 border-border/30",     label: "No Bet"          },
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function parseOddsDecimal(odds: string | null | undefined): number | null {
-  if (!odds) return null;
-  const s = odds.trim().toLowerCase();
-  if (s === "evs" || s === "evens") return 2.0;
-  const sl = s.indexOf("/");
-  if (sl !== -1) {
-    const n = parseFloat(s.slice(0, sl)), d = parseFloat(s.slice(sl + 1));
-    if (!isNaN(n) && !isNaN(d) && d > 0) return n / d + 1;
-  }
-  const dec = parseFloat(s);
-  if (!isNaN(dec)) return dec;
-  return null;
-}
-
 // ── Race entry builder ────────────────────────────────────────────────────────
 
 type RunnerRow = {
@@ -110,14 +92,12 @@ type RacecardRow = {
 };
 
 function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
-  bodCandidates:  ScoredPick[];  // engine-classified best_of_day — day-level governance picks ONE
-  topRatedPicks:  ScoredPick[];  // top_rated_high_variance from engine
-  eachWayPicks:   ScoredPick[];
-  replayPicks:    ScoredPick[];
-  hiddenPicks:    ScoredPick[];
-  avoid?:         AvoidEntry;
+  bodCandidates: ScoredPick[];  // engine: best_of_day — day-level governance elects one
+  topRatedPicks: ScoredPick[];  // engine: top_rated_high_variance
+  eachWayPicks:  ScoredPick[];  // engine: each_way_value (score + hidden component + odds)
+  avoid?:        AvoidEntry;
 } {
-  const empty = { bodCandidates: [], topRatedPicks: [], eachWayPicks: [], replayPicks: [], hiddenPicks: [] };
+  const empty = { bodCandidates: [], topRatedPicks: [], eachWayPicks: [] };
   const active = runners.filter(r => !r.isNonRunner && !r.scratched);
   if (active.length === 0) return empty;
 
@@ -152,64 +132,43 @@ function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
     }))
     .sort((a, b) => b.result.totalScore - a.result.totalScore);
 
-  // Field edge = gap between rank-1 score and rank-2 score within this race
   const fieldEdgeForRank = (idx: number) => {
-    if (scored.length < 2) return 20; // only one runner: infinite edge
+    if (scored.length < 2) return 20;
     if (idx === 0) return scored[0].result.totalScore - scored[1].result.totalScore;
     return scored[idx].result.totalScore - (scored[idx + 1]?.result.totalScore ?? 0);
   };
 
-  const toPick = (e: typeof scored[0], idx: number, confOverride?: string, catScore?: number): ScoredPick => ({
+  const toPick = (e: typeof scored[0], idx: number): ScoredPick => ({
     racecardId: rc.id, venue: rc.venue, raceTime: rc.raceTime, raceName: rc.raceName,
     horseName: e.runner.horseName, odds: e.runner.odds,
-    confidenceClass: confOverride ?? e.result.confidenceClass,
+    confidenceClass: e.result.confidenceClass,
     reason: e.result.classificationNote || e.result.ability.note,
     totalScore: e.result.totalScore,
-    categoryScore: catScore ?? e.result.totalScore,
+    categoryScore: e.result.totalScore,
     fieldEdge: fieldEdgeForRank(idx),
     volatilityTier: volatility.tier,
   });
 
-  // BOD candidates: engine says best_of_day — day-level governance will elect at most one
+  // All three categories come directly from the engine classification output.
+  // Replay Intelligence and Hidden Value are scoring inputs — they already raised
+  // the final totalScore; the engine then assigns one of these four classes:
+  // best_of_day | top_rated_high_variance | each_way_value | no_bet
   const bodCandidates = scored
     .map((e, i) => ({ e, i }))
     .filter(({ e }) => e.result.confidenceClass === "best_of_day")
     .map(({ e, i }) => toPick(e, i));
 
-  // Top Rated: engine says top_rated_high_variance
   const topRatedPicks = scored
     .map((e, i) => ({ e, i }))
     .filter(({ e }) => e.result.confidenceClass === "top_rated_high_variance")
     .map(({ e, i }) => toPick(e, i));
 
-  // Replay Upgrades
-  const replayPicks = scored
+  const eachWayPicks = scored
     .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e.result.confidenceClass === "replay_upgrade")
-    .map(({ e, i }) => toPick(e, i, undefined, e.result.replayIntelligence.score));
+    .filter(({ e }) => e.result.confidenceClass === "each_way_value")
+    .map(({ e, i }) => toPick(e, i));
 
-  // Hidden Value
-  const hiddenPicks = scored
-    .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e.result.hiddenValue.score >= 60 && e.result.confidenceClass !== "no_bet")
-    .sort((a, b) => b.e.result.hiddenValue.score - a.e.result.hiddenValue.score)
-    .map(({ e, i }) => toPick(e, i, "hidden_value", e.result.hiddenValue.score));
-
-  // Each Way: hidden_value profile + decent odds + field large enough
-  const eachWayPicks = active.length >= 5
-    ? scored
-        .map((e, i) => ({ e, i }))
-        .filter(({ e }) => {
-          const dec = parseOddsDecimal(e.runner.odds);
-          return e.result.hiddenValue.score >= 58
-            && e.result.confidenceClass !== "no_bet"
-            && (dec === null || dec >= 3.0);
-        })
-        .sort((a, b) => b.e.result.hiddenValue.score - a.e.result.hiddenValue.score)
-        .map(({ e, i }) => toPick(e, i, "each_way_value", e.result.hiddenValue.score))
-    : [];
-
-  return { bodCandidates, topRatedPicks, eachWayPicks, replayPicks, hiddenPicks };
+  return { bodCandidates, topRatedPicks, eachWayPicks };
 }
 
 // ── Aggregate into day board ──────────────────────────────────────────────────
@@ -434,37 +393,30 @@ export default function Dashboard() {
 
   const board: DayBoard = useMemo(() => {
     const empty: DayBoard = {
-      betOfDay: null, bestOfDay: [], topRated: [], eachWayValue: [],
-      replayUpgrades: [], hiddenValue: [], avoidRaces: [],
+      betOfDay: null, bestOfDay: [], topRated: [], eachWayValue: [], avoidRaces: [],
     };
     if (!todayRacecards) return empty;
 
     const allBodCandidates: ScoredPick[] = [];
     const allTopRated:      ScoredPick[] = [];
     const allEachWay:       ScoredPick[] = [];
-    const allReplay:        ScoredPick[] = [];
-    const allHidden:        ScoredPick[] = [];
     const allAvoid:         AvoidEntry[] = [];
 
     analysisQueries.forEach((q, i) => {
       const rc = todayRacecards[i];
       if (!q.data || !rc) return;
-      const { bodCandidates, topRatedPicks, eachWayPicks, replayPicks, hiddenPicks, avoid }
+      const { bodCandidates, topRatedPicks, eachWayPicks, avoid }
         = buildRaceEntries(rc, q.data.runners);
 
       allBodCandidates.push(...bodCandidates);
       allTopRated.push(...topRatedPicks);
       allEachWay.push(...eachWayPicks);
-      allReplay.push(...replayPicks);
-      allHidden.push(...hiddenPicks);
       if (avoid) allAvoid.push(avoid);
     });
 
-    // ── Elect a single Bet Of The Day from the Best Of The Day pool ──────────
-    // Only best_of_day horses are eligible — Hidden Value / Replay / High Variance excluded
+    // Elect single Bet Of The Day from the Best Of The Day pool only
     const { winner: betOfDay, rest: remainingBod } = electBetOfDay(allBodCandidates);
 
-    // Dedup helper
     const dedup = (arr: ScoredPick[]) => {
       const seen = new Set<string>();
       return arr.filter(p => {
@@ -476,20 +428,15 @@ export default function Dashboard() {
 
     return {
       betOfDay,
-      // Best Of The Day list = all remaining BOD horses after the winner is removed
-      bestOfDay:      dedup(remainingBod.sort((a, b) => b.totalScore - a.totalScore)),
-      // Top Rated = engine-classified top_rated_high_variance only
-      topRated:       dedup(allTopRated.sort((a, b) => b.totalScore - a.totalScore)),
-      eachWayValue:   dedup(allEachWay.sort((a, b) => b.categoryScore - a.categoryScore)),
-      replayUpgrades: dedup(allReplay.sort((a, b) => b.categoryScore - a.categoryScore)),
-      hiddenValue:    dedup(allHidden.sort((a, b) => b.categoryScore - a.categoryScore)),
-      avoidRaces:     allAvoid.sort((a, b) => b.volatility.score - a.volatility.score),
+      bestOfDay:    dedup(remainingBod.sort((a, b) => b.totalScore - a.totalScore)),
+      topRated:     dedup(allTopRated.sort((a, b) => b.totalScore - a.totalScore)),
+      eachWayValue: dedup(allEachWay.sort((a, b) => b.totalScore - a.totalScore)),
+      avoidRaces:   allAvoid.sort((a, b) => b.volatility.score - a.volatility.score),
     };
   }, [analysisQueries, todayRacecards]);
 
   const isBootstrapping = loadingRacecards || (totalCount > 0 && loadedCount === 0);
-  const totalPicks = board.bestOfDay.length + board.topRated.length + board.eachWayValue.length
-    + board.replayUpgrades.length + board.hiddenValue.length;
+  const totalPicks = board.bestOfDay.length + board.topRated.length + board.eachWayValue.length;
 
   return (
     <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -520,10 +467,10 @@ export default function Dashboard() {
       {/* Stats strip */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {[
-          { label: "Today's Races",   value: summary?.todayRaceCount ?? "—",                             accent: "" },
-          { label: "Best Of The Day", value: board.bestOfDay.length    || (loadingAnalysis ? "…" : "0"), accent: "text-amber-400"  },
+          { label: "Today's Races",   value: summary?.todayRaceCount ?? "—",                              accent: "" },
+          { label: "Best Of The Day", value: board.bestOfDay.length    || (loadingAnalysis ? "…" : "0"),  accent: "text-amber-400"  },
+          { label: "Top Rated",       value: board.topRated.length     || (loadingAnalysis ? "…" : "0"),  accent: "text-blue-400"   },
           { label: "EW Value",        value: board.eachWayValue.length  || (loadingAnalysis ? "…" : "0"), accent: "text-teal-400"   },
-          { label: "Replay Picks",    value: board.replayUpgrades.length || (loadingAnalysis ? "…" : "0"), accent: "text-purple-400" },
           { label: "Avoid Today",     value: board.avoidRaces.length    || (loadingAnalysis ? "…" : "0"), accent: "text-red-400"    },
         ].map(s => (
           <div key={s.label} className="bg-secondary/30 rounded-lg px-3 py-2.5 text-center">
@@ -563,11 +510,11 @@ export default function Dashboard() {
               : <NoBetOfDay scanning={loadingAnalysis} />}
           </section>
 
-          {/* ── BEST OF THE DAY (ranked list — all other qualifiers) ──────── */}
+          {/* ── BEST OF THE DAY (ranked list — remaining qualifiers) ─────── */}
           <BoardSection
             icon={<Trophy className="h-4 w-4" />}
             title="Best Of The Day"
-            subtitle="Controlled-confidence selections — strongest to weakest"
+            subtitle="Strongest controlled-confidence selections — ranked by final APEX score"
             accent="text-amber-400"
             picks={board.bestOfDay}
             maxRows={8}
@@ -575,40 +522,28 @@ export default function Dashboard() {
             emptyNote="No Best Of The Day qualifiers today."
           />
 
-          {/* ── EACH WAY VALUE ────────────────────────────────────────────── */}
+          {/* ── TOP RATED ─────────────────────────────────────────────────── */}
           <BoardSection
             icon={<Star className="h-4 w-4" />}
-            title="Each Way Value Bets"
-            subtitle="Hidden value profiles with each-way odds potential"
+            title="Top Rated"
+            subtitle="High-scoring horses where race volatility limits top classification"
+            accent="text-blue-400"
+            picks={board.topRated}
+            maxRows={8}
+            scanning={loadingAnalysis}
+            emptyNote="No Top Rated qualifiers today."
+          />
+
+          {/* ── EACH WAY VALUE ────────────────────────────────────────────── */}
+          <BoardSection
+            icon={<Eye className="h-4 w-4" />}
+            title="Each Way Value"
+            subtitle="Composite score + elevated hidden component + EW-friendly odds"
             accent="text-teal-400"
             picks={board.eachWayValue}
             maxRows={6}
             scanning={loadingAnalysis}
-            emptyNote="No each-way value candidates today."
-          />
-
-          {/* ── REPLAY UPGRADES ───────────────────────────────────────────── */}
-          <BoardSection
-            icon={<Film className="h-4 w-4" />}
-            title="Replay Upgrades"
-            subtitle="Horses whose effort is better than form figures suggest"
-            accent="text-purple-400"
-            picks={board.replayUpgrades}
-            maxRows={6}
-            scanning={loadingAnalysis}
-            emptyNote="No replay upgrade candidates today."
-          />
-
-          {/* ── HIDDEN VALUE ──────────────────────────────────────────────── */}
-          <BoardSection
-            icon={<Eye className="h-4 w-4" />}
-            title="Hidden Value Horses"
-            subtitle="Underestimated runners with market miss potential"
-            accent="text-emerald-400"
-            picks={board.hiddenValue}
-            maxRows={6}
-            scanning={loadingAnalysis}
-            emptyNote="No hidden value candidates today."
+            emptyNote="No Each Way Value qualifiers today."
           />
 
           {/* ── AVOID TODAY ───────────────────────────────────────────────── */}
