@@ -18,7 +18,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Plus, Trash2, ChevronLeft, Edit2, Save, X } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronLeft, Edit2, Save, X, Youtube } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 
@@ -351,18 +351,30 @@ export default function RacecardDetail() {
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
+                      <a
+                        href={`https://www.youtube.com/results?search_query=${encodeURIComponent(runner.horseName + " horse racing")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Watch ${runner.horseName} on YouTube`}
+                      >
+                        <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 border-red-500/30 hover:bg-red-500/10">
+                          <Youtube className="h-4 w-4" />
+                        </Button>
+                      </a>
                       <Link href={`/racecards/${racecardId}/score/${runner.id}`}>
-                        <Button size="sm" variant="outline" data-testid={`button-score-runner-${runner.id}`}>APEX Score</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs px-2.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" data-testid={`button-score-runner-${runner.id}`}>
+                          APEX
+                        </Button>
                       </Link>
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="text-destructive hover:text-destructive h-8 w-8"
+                        className="text-destructive hover:text-destructive h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                         onClick={() => removeRunner(runner.id)}
                         data-testid={`button-delete-runner-${runner.id}`}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
