@@ -10,11 +10,11 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Loader2, Trophy, Eye, Film, Ban, ChevronRight,
+  Loader2, Trophy, Eye, Ban, ChevronRight,
   Zap, Star, TrendingUp, ShieldOff,
 } from "lucide-react";
 import {
-  runApexEngine, computeRaceVolatility,
+  runApexEngineForField, computeRaceVolatility,
   type RaceVolatilityResult, type VolatilityTier,
 } from "@/lib/apexEngine";
 
@@ -56,9 +56,11 @@ interface DayBoard {
 
 const todayStr = new Date().toISOString().slice(0, 10);
 
-// Governance thresholds for the single Best Of The Day horse
-const BOD_MIN_SCORE      = 62;   // must score at least this
-const BOD_MIN_FIELD_EDGE = 4;    // must be this many points clear of 2nd horse in race
+// Day-level governance for the single Bet Of The Day election.
+// Candidates must already be engine-classified as best_of_day (rank-1, low/med volatility).
+// These thresholds then elect at most one horse from that pool.
+const BOD_MIN_SCORE      = 65;   // relative score floor
+const BOD_MIN_FIELD_EDGE = 5;    // must lead field by this many pts
 const BOD_ALLOWED_TIERS: VolatilityTier[] = ["low", "medium"];
 
 const TIER_COLOR: Record<VolatilityTier, string> = {
@@ -67,12 +69,10 @@ const TIER_COLOR: Record<VolatilityTier, string> = {
 };
 
 const CONF_STYLE: Record<string, { chip: string; label: string }> = {
-  best_of_day:             { chip: "bg-amber-400/15 text-amber-300 border-amber-400/30",       label: "Best Of The Day" },
-  top_rated_high_variance: { chip: "bg-blue-400/15 text-blue-300 border-blue-400/30",          label: "Top Rated"       },
-  hidden_value:            { chip: "bg-emerald-400/15 text-emerald-300 border-emerald-400/30", label: "Hidden Value"    },
-  replay_upgrade:          { chip: "bg-purple-400/15 text-purple-300 border-purple-400/30",    label: "Replay Upgrade"  },
-  each_way_value:          { chip: "bg-teal-400/15 text-teal-300 border-teal-400/30",          label: "EW Value"        },
-  no_bet:                  { chip: "bg-muted/20 text-muted-foreground/50 border-border/30",     label: "No Bet"          },
+  best_of_day:             { chip: "bg-amber-400/15 text-amber-300 border-amber-400/30",   label: "Best Of Day"  },
+  top_rated_high_variance: { chip: "bg-blue-400/15 text-blue-300 border-blue-400/30",     label: "Top Rated"    },
+  each_way_value:          { chip: "bg-teal-400/15 text-teal-300 border-teal-400/30",     label: "EW Value"     },
+  no_bet:                  { chip: "bg-muted/20 text-muted-foreground/50 border-border/30", label: "No Bet"      },
 };
 
 // ── Race entry builder ────────────────────────────────────────────────────────
@@ -92,9 +92,9 @@ type RacecardRow = {
 };
 
 function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
-  bodCandidates: ScoredPick[];  // engine: best_of_day — day-level governance elects one
-  topRatedPicks: ScoredPick[];  // engine: top_rated_high_variance
-  eachWayPicks:  ScoredPick[];  // engine: each_way_value (score + hidden component + odds)
+  bodCandidates: ScoredPick[];
+  topRatedPicks: ScoredPick[];
+  eachWayPicks:  ScoredPick[];
   avoid?:        AvoidEntry;
 } {
   const empty = { bodCandidates: [], topRatedPicks: [], eachWayPicks: [] };
@@ -109,8 +109,8 @@ function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
     fieldSize: active.length,
   };
 
+  // Pre-check race volatility to fast-path extreme races to avoid list
   const volatility = computeRaceVolatility(racecardInput);
-
   if (volatility.tier === "extreme") {
     return {
       ...empty,
@@ -121,52 +121,36 @@ function buildRaceEntries(rc: RacecardRow, runners: RunnerRow[]): {
     };
   }
 
-  const scored = active
-    .map(r => ({
-      runner: r,
-      result: runApexEngine(
-        { horseName: r.horseName, draw: r.draw, age: r.age, form: r.form,
-          odds: r.odds, jockey: r.jockey, trainer: r.trainer, weight: r.weight },
-        racecardInput,
-      ),
-    }))
-    .sort((a, b) => b.result.totalScore - a.result.totalScore);
+  // Field-first scoring: all runners scored, ranked, and classified together
+  const runnerInputs = active.map(r => ({
+    horseName: r.horseName, draw: r.draw, age: r.age, form: r.form,
+    odds: r.odds, jockey: r.jockey, trainer: r.trainer, weight: r.weight,
+  }));
 
-  const fieldEdgeForRank = (idx: number) => {
-    if (scored.length < 2) return 20;
-    if (idx === 0) return scored[0].result.totalScore - scored[1].result.totalScore;
-    return scored[idx].result.totalScore - (scored[idx + 1]?.result.totalScore ?? 0);
-  };
+  const fieldResults = runApexEngineForField(runnerInputs, racecardInput);
 
-  const toPick = (e: typeof scored[0], idx: number): ScoredPick => ({
+  const toPick = (fr: typeof fieldResults[0]): ScoredPick => ({
     racecardId: rc.id, venue: rc.venue, raceTime: rc.raceTime, raceName: rc.raceName,
-    horseName: e.runner.horseName, odds: e.runner.odds,
-    confidenceClass: e.result.confidenceClass,
-    reason: e.result.classificationNote || e.result.ability.note,
-    totalScore: e.result.totalScore,
-    categoryScore: e.result.totalScore,
-    fieldEdge: fieldEdgeForRank(idx),
-    volatilityTier: volatility.tier,
+    horseName: fr.runner.horseName, odds: fr.runner.odds,
+    confidenceClass: fr.result.confidenceClass,
+    reason: fr.result.classificationNote,
+    totalScore: fr.relativeScore,
+    categoryScore: fr.relativeScore,
+    fieldEdge: fr.fieldEdge,
+    volatilityTier: fr.result.raceVolatility.tier,
   });
 
-  // All three categories come directly from the engine classification output.
-  // Replay Intelligence and Hidden Value are scoring inputs — they already raised
-  // the final totalScore; the engine then assigns one of these four classes:
-  // best_of_day | top_rated_high_variance | each_way_value | no_bet
-  const bodCandidates = scored
-    .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e.result.confidenceClass === "best_of_day")
-    .map(({ e, i }) => toPick(e, i));
+  const bodCandidates = fieldResults
+    .filter(fr => fr.result.confidenceClass === "best_of_day")
+    .map(toPick);
 
-  const topRatedPicks = scored
-    .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e.result.confidenceClass === "top_rated_high_variance")
-    .map(({ e, i }) => toPick(e, i));
+  const topRatedPicks = fieldResults
+    .filter(fr => fr.result.confidenceClass === "top_rated_high_variance")
+    .map(toPick);
 
-  const eachWayPicks = scored
-    .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e.result.confidenceClass === "each_way_value")
-    .map(({ e, i }) => toPick(e, i));
+  const eachWayPicks = fieldResults
+    .filter(fr => fr.result.confidenceClass === "each_way_value")
+    .map(toPick);
 
   return { bodCandidates, topRatedPicks, eachWayPicks };
 }

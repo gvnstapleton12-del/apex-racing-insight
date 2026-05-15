@@ -3,8 +3,8 @@ import {
   useGetRacecardAnalysis,
   getGetRacecardAnalysisQueryKey,
 } from "@workspace/api-client-react";
-import { runApexEngine, computeRaceVolatility, type VolatilityTier } from "@/lib/apexEngine";
-import { Trophy, Star, Eye, Film, Ban, ShieldAlert, Loader2 } from "lucide-react";
+import { runApexEngineForField, computeRaceVolatility, type VolatilityTier } from "@/lib/apexEngine";
+import { Trophy, Ban, ShieldAlert, Loader2 } from "lucide-react";
 
 interface Props {
   racecardId: number;
@@ -29,16 +29,14 @@ const TIER_CHIP: Record<VolatilityTier, string> = {
 const CONF_CHIP: Record<string, string> = {
   best_of_day:             "text-amber-300 bg-amber-400/10 border-amber-400/25",
   top_rated_high_variance: "text-blue-300  bg-blue-400/10  border-blue-400/25",
-  hidden_value:            "text-emerald-300 bg-emerald-400/10 border-emerald-400/25",
-  replay_upgrade:          "text-purple-300 bg-purple-400/10 border-purple-400/25",
+  each_way_value:          "text-teal-300  bg-teal-400/10  border-teal-400/25",
   no_bet:                  "text-muted-foreground bg-muted/20 border-border/30",
 };
 
 const CONF_LABEL: Record<string, string> = {
   best_of_day:             "Best Of Day",
-  top_rated_high_variance: "High Variance",
-  hidden_value:            "Hidden Value",
-  replay_upgrade:          "Replay Upgrade",
+  top_rated_high_variance: "Top Rated",
+  each_way_value:          "EW Value",
   no_bet:                  "No Bet",
 };
 
@@ -68,40 +66,33 @@ export function RaceApexQuickPick({
 
     const racecardInput = {
       raceName,
-      distance: distance ?? null,
-      going: going ?? null,
-      raceClass: raceClass ?? null,
-      prize: prize ?? null,
-      trackProfile: trackProfile ?? null,
-      marketContext: marketContext ?? null,
+      distance:        distance        ?? null,
+      going:           going           ?? null,
+      raceClass:       raceClass       ?? null,
+      prize:           prize           ?? null,
+      trackProfile:    trackProfile    ?? null,
+      marketContext:   marketContext   ?? null,
       trainerComments: trainerComments ?? null,
-      nonRunners: nonRunners ?? null,
-      fieldSize: active.length,
+      nonRunners:      nonRunners      ?? null,
+      fieldSize:       active.length,
     };
 
     const volatility = computeRaceVolatility(racecardInput);
+    const isNoBetRace = volatility.tier === "extreme";
 
-    const scored = active
-      .map(r => ({
-        runner: r,
-        result: runApexEngine(
-          { horseName: r.horseName, draw: r.draw, age: r.age, form: r.form,
-            odds: r.odds, jockey: r.jockey, trainer: r.trainer, weight: r.weight },
-          racecardInput,
-        ),
-      }))
-      .sort((a, b) => b.result.totalScore - a.result.totalScore);
+    if (isNoBetRace) {
+      return { leader: null, volatility, isNoBetRace: true, count: active.length };
+    }
 
-    const fieldAvg = scored.reduce((s, e) => s + e.result.totalScore, 0) / scored.length;
-    const topRated = scored[0];
-    const bestOfDay = scored.find(e => e.result.confidenceClass === "best_of_day");
-    const hiddenValue = scored.find(e => e.result.confidenceClass === "hidden_value");
-    const replayUpgrade = scored.find(e => e.result.confidenceClass === "replay_upgrade");
-    const allNoBet = scored.every(e => e.result.confidenceClass === "no_bet");
-    const noBetRace = allNoBet || volatility.tier === "extreme";
-    const fieldEdge = Math.round(topRated.result.totalScore - fieldAvg);
+    const runnerInputs = active.map(r => ({
+      horseName: r.horseName, draw: r.draw, age: r.age, form: r.form,
+      odds: r.odds, jockey: r.jockey, trainer: r.trainer, weight: r.weight,
+    }));
 
-    return { topRated, bestOfDay, hiddenValue, replayUpgrade, volatility, noBetRace, fieldEdge, count: active.length };
+    const fieldResults = runApexEngineForField(runnerInputs, racecardInput);
+    const leader = fieldResults[0]; // rank-1 by relative score
+
+    return { leader, volatility, isNoBetRace: false, count: active.length };
   }, [analysis, raceName, distance, going, raceClass, prize, trackProfile, marketContext, trainerComments, nonRunners]);
 
   if (isLoading) {
@@ -121,59 +112,37 @@ export function RaceApexQuickPick({
     );
   }
 
-  const { topRated, bestOfDay, hiddenValue, replayUpgrade, volatility, noBetRace, fieldEdge, count } = picks;
+  const { leader, volatility, isNoBetRace, count } = picks;
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-      {/* Volatility */}
+      {/* Volatility badge */}
       <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${TIER_CHIP[volatility.tier]}`}>
         <ShieldAlert className="h-2.5 w-2.5 shrink-0" />
         {volatility.label}
       </span>
 
-      {noBetRace ? (
+      {isNoBetRace || !leader ? (
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border text-red-400 bg-red-500/10 border-red-500/30">
           <Ban className="h-2.5 w-2.5 shrink-0" />
           No Bet Race
         </span>
       ) : (
         <>
-          {/* Top Rated */}
+          {/* Top horse in field */}
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border text-amber-400 bg-amber-400/10 border-amber-400/30">
             <Trophy className="h-2.5 w-2.5 shrink-0" />
-            {topRated.runner.horseName}
-            <span className="font-mono opacity-70">{topRated.result.totalScore}</span>
-            {fieldEdge > 0 && <span className="text-green-400/70 font-mono">+{fieldEdge}</span>}
+            {leader.runner.horseName}
+            <span className="font-mono opacity-70">{Math.round(leader.relativeScore)}</span>
+            {leader.fieldEdge > 0 && (
+              <span className="text-green-400/70 font-mono">+{leader.fieldEdge.toFixed(1)}</span>
+            )}
           </span>
 
-          {/* Best Of Day (if different from top rated) */}
-          {bestOfDay && bestOfDay.runner.id !== topRated.runner.id && (
-            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${CONF_CHIP.best_of_day}`}>
-              <Star className="h-2.5 w-2.5 shrink-0" />
-              BOD: {bestOfDay.runner.horseName}
-            </span>
-          )}
-
-          {/* Confidence class of top pick */}
-          <span className={`inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded border ${CONF_CHIP[topRated.result.confidenceClass] ?? CONF_CHIP.no_bet}`}>
-            {CONF_LABEL[topRated.result.confidenceClass] ?? topRated.result.confidenceClass}
+          {/* Classification chip */}
+          <span className={`inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded border ${CONF_CHIP[leader.result.confidenceClass] ?? CONF_CHIP.no_bet}`}>
+            {CONF_LABEL[leader.result.confidenceClass] ?? leader.result.confidenceClass}
           </span>
-
-          {/* Hidden Value */}
-          {hiddenValue && (
-            <span className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${CONF_CHIP.hidden_value}`}>
-              <Eye className="h-2.5 w-2.5 shrink-0" />
-              HV: {hiddenValue.runner.horseName}
-            </span>
-          )}
-
-          {/* Replay Upgrade */}
-          {replayUpgrade && !hiddenValue && (
-            <span className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${CONF_CHIP.replay_upgrade}`}>
-              <Film className="h-2.5 w-2.5 shrink-0" />
-              Replay: {replayUpgrade.runner.horseName}
-            </span>
-          )}
         </>
       )}
 
