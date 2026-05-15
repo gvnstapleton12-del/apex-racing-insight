@@ -8,6 +8,7 @@ import scoresRouter from "./scores";
 import calibrationRouter from "./calibration";
 import dashboardRouter from "./dashboard";
 import uploadRouter from "./upload";
+import fetchRouter from "./fetch";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(scoresRouter);
 router.use(calibrationRouter);
 router.use(dashboardRouter);
 router.use(uploadRouter);
+router.use(fetchRouter);
 
 export default router;

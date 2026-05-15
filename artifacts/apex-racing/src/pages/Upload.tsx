@@ -7,8 +7,13 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Upload as UploadIcon, FileText, CheckCircle, AlertCircle, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader2, Upload as UploadIcon, FileText, CheckCircle, AlertCircle, X, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const LS_USERNAME = "apex_racing_api_username";
+const LS_PASSWORD = "apex_racing_api_password";
 
 interface ParsedRow {
   [key: string]: string;
@@ -229,6 +234,156 @@ function UploadZone({ title, description, onUpload, isPending, result, onClear, 
   );
 }
 
+interface FetchResult {
+  success: boolean;
+  date: string;
+  racesInserted: number;
+  racesSkipped: number;
+  runnersInserted: number;
+  nonRunnersMarked: number;
+  errors: string[];
+  message: string;
+}
+
+function FetchCard() {
+  const { toast } = useToast();
+  const [username, setUsername] = useState(() => localStorage.getItem(LS_USERNAME) ?? "");
+  const [password, setPassword] = useState(() => localStorage.getItem(LS_PASSWORD) ?? "");
+  const [showPassword, setShowPassword] = useState(false);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<FetchResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const saveCredentials = () => {
+    localStorage.setItem(LS_USERNAME, username);
+    localStorage.setItem(LS_PASSWORD, password);
+  };
+
+  const handleFetch = async () => {
+    if (!username || !password) {
+      toast({ title: "Enter your Racing API credentials first", variant: "destructive" });
+      return;
+    }
+    saveCredentials();
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/fetch/today", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, date }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Fetch failed");
+      } else {
+        setResult(data as FetchResult);
+        toast({ title: data.message });
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="border-primary/30 bg-primary/5">
+      <CardHeader className="pb-2 pt-4 px-4">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <RefreshCw className="h-4 w-4 text-primary" />
+          Fetch Today's Card — The Racing API
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Auto-import racecards, runners &amp; non-runners. Free account at{" "}
+          <a href="https://theracingapi.com" target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">
+            theracingapi.com
+          </a>{" "}
+          (50 calls/day free).
+        </p>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Username</Label>
+            <Input
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="Racing API username"
+              className="h-8 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Password</Label>
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Racing API password"
+                className="h-8 text-sm pr-8"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(s => !s)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Date</Label>
+            <Input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="h-8 text-sm"
+            />
+          </div>
+        </div>
+
+        <Button
+          className="w-full gap-2"
+          onClick={handleFetch}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {loading ? "Fetching…" : `Fetch ${date}`}
+        </Button>
+
+        {error && (
+          <div className="rounded-md p-3 border border-red-500/30 bg-red-500/5 text-sm text-red-400">
+            {error}
+          </div>
+        )}
+
+        {result && (
+          <div className={`rounded-md p-4 space-y-2 border ${result.success ? "border-green-500/30 bg-green-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+            <div className="flex items-center gap-2">
+              {result.success
+                ? <CheckCircle className="h-5 w-5 text-green-400" />
+                : <AlertCircle className="h-5 w-5 text-amber-400" />}
+              <span className="font-semibold text-sm">{result.message}</span>
+            </div>
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
+              <span className="text-green-400">{result.racesInserted} new races</span>
+              <span>{result.racesSkipped} already existed</span>
+              <span className="text-green-400">{result.runnersInserted} runners</span>
+              {result.nonRunnersMarked > 0 && <span className="text-amber-400">{result.nonRunnersMarked} non-runners</span>}
+            </div>
+            {result.errors.slice(0, 3).map((err, i) => (
+              <p key={i} className="text-xs text-red-400">{err}</p>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Upload() {
   const { toast } = useToast();
   const uploadRaces = useUploadRaces();
@@ -262,6 +417,8 @@ export default function Upload() {
         <h1 className="text-2xl font-bold tracking-tight mb-1">Upload Centre</h1>
         <p className="text-muted-foreground text-sm">Ingest racecards and results via spreadsheet or CSV.</p>
       </div>
+
+      <FetchCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <UploadZone
