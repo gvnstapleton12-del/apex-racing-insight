@@ -241,6 +241,7 @@ interface FetchResult {
   racesSkipped: number;
   runnersInserted: number;
   nonRunnersMarked: number;
+  nrNote: string | null;
   errors: string[];
   message: string;
 }
@@ -372,8 +373,14 @@ function FetchCard() {
               <span className="text-green-400">{result.racesInserted} new races</span>
               <span>{result.racesSkipped} already existed</span>
               <span className="text-green-400">{result.runnersInserted} runners</span>
-              {result.nonRunnersMarked > 0 && <span className="text-amber-400">{result.nonRunnersMarked} non-runners</span>}
+              {result.nonRunnersMarked > 0 && <span className="text-green-400">{result.nonRunnersMarked} non-runners marked</span>}
             </div>
+            {result.nrNote && (
+              <p className="text-xs text-amber-400 flex items-start gap-1">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                {result.nrNote}
+              </p>
+            )}
             {result.errors.slice(0, 3).map((err, i) => (
               <p key={i} className="text-xs text-red-400">{err}</p>
             ))}

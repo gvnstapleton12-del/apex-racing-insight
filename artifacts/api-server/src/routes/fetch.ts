@@ -245,9 +245,11 @@ router.post("/fetch/today", async (req, res): Promise<void> => {
   }
 
   // ── 2. Fetch non-runners (best-effort — may not be on free tier) ─────────
+  let nrNote: string | null = null;
   try {
     const data = await apiGet(`/non-runners?date=${targetDate}`, username, password);
     const nrs = (data["non_runners"] as ApiNonRunner[]) ?? [];
+    nrNote = nrs.length === 0 ? "Non-runners endpoint returned 0 results." : null;
 
     for (const nr of nrs) {
       const horseName = nr.horse ?? "";
@@ -283,8 +285,15 @@ router.post("/fetch/today", async (req, res): Promise<void> => {
         nonRunnersMarked++;
       } catch (e) { errors.push(`NR ${horseName}: ${String(e)}`); }
     }
-  } catch {
-    // Non-runners endpoint may not be on free tier — silently skip
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes("403") || msg.includes("401") || msg.includes("404")) {
+      nrNote = "Non-runners endpoint not available on your Racing API plan — use the manual upload below for non-runners.";
+    } else if (msg.includes("429")) {
+      nrNote = "Non-runners fetch rate-limited — try again in a few seconds.";
+    } else {
+      nrNote = `Non-runners fetch failed: ${msg}`;
+    }
   }
 
   res.json({
@@ -294,6 +303,7 @@ router.post("/fetch/today", async (req, res): Promise<void> => {
     racesSkipped,
     runnersInserted,
     nonRunnersMarked,
+    nrNote,
     errors,
     message: `Imported ${racesInserted} races, ${runnersInserted} runners, ${nonRunnersMarked} non-runners (${racesSkipped} races already existed)`,
   });
