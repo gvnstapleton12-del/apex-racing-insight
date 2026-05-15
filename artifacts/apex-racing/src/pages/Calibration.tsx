@@ -82,22 +82,22 @@ export default function Calibration() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight mb-1">Calibration Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight mb-1">Calibration</h1>
           <p className="text-muted-foreground text-sm">Daily prediction accuracy review and model tracking.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 shrink-0">
           <Input
             type="date"
-            className="w-44"
+            className="flex-1 sm:w-40"
             value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
             data-testid="input-calibration-date"
           />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2" data-testid="button-add-calibration-entry">
+              <Button className="gap-2 shrink-0" data-testid="button-add-calibration-entry">
                 <Plus className="h-4 w-4" /> Log Entry
               </Button>
             </DialogTrigger>
