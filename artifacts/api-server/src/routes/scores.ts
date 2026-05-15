@@ -6,7 +6,6 @@ import {
   CreateScoreBody,
   UpdateScoreParams,
   UpdateScoreBody,
-  UpdateScoreResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -20,7 +19,6 @@ function computeTotalScore(data: {
   hiddenValueScore: number;
   volatilityRisk: number;
 }): number {
-  // Weighted composite: volatility penalises the score
   const weighted =
     data.abilityScore * 0.25 +
     data.paceFitScore * 0.15 +
@@ -81,7 +79,6 @@ router.patch("/scores/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Get existing record to recompute total
   const [existing] = await db.select().from(apexScoresTable).where(eq(apexScoresTable.id, params.data.id));
   if (!existing) {
     res.status(404).json({ error: "Score not found" });
@@ -96,7 +93,7 @@ router.patch("/scores/:id", async (req, res): Promise<void> => {
     .where(eq(apexScoresTable.id, params.data.id))
     .returning();
 
-  res.json(UpdateScoreResponse.parse(score));
+  res.json(score);
 });
 
 export default router;

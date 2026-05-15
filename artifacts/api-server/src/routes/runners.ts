@@ -4,10 +4,8 @@ import { db, runnersTable } from "@workspace/db";
 import {
   CreateRunnerBody,
   GetRunnerParams,
-  GetRunnerResponse,
   UpdateRunnerParams,
   UpdateRunnerBody,
-  UpdateRunnerResponse,
   DeleteRunnerParams,
 } from "@workspace/api-zod";
 
@@ -21,7 +19,7 @@ router.post("/runners", async (req, res): Promise<void> => {
   }
 
   const [runner] = await db.insert(runnersTable).values(parsed.data).returning();
-  res.status(201).json(GetRunnerResponse.parse(runner));
+  res.status(201).json(runner);
 });
 
 router.get("/runners/:id", async (req, res): Promise<void> => {
@@ -37,7 +35,7 @@ router.get("/runners/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(GetRunnerResponse.parse(runner));
+  res.json(runner);
 });
 
 router.patch("/runners/:id", async (req, res): Promise<void> => {
@@ -59,7 +57,7 @@ router.patch("/runners/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(UpdateRunnerResponse.parse(runner));
+  res.json(runner);
 });
 
 router.delete("/runners/:id", async (req, res): Promise<void> => {

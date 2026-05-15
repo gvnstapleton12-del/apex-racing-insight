@@ -3,13 +3,10 @@ import { eq, desc, and, like } from "drizzle-orm";
 import { db, racecardsTable, runnersTable, apexScoresTable } from "@workspace/db";
 import {
   ListRacecardsQueryParams,
-  ListRacecardsResponseItem,
   CreateRacecardBody,
   GetRacecardParams,
-  GetRacecardResponse,
   UpdateRacecardParams,
   UpdateRacecardBody,
-  UpdateRacecardResponse,
   DeleteRacecardParams,
   GetRacecardAnalysisParams,
 } from "@workspace/api-zod";
@@ -23,8 +20,6 @@ router.get("/racecards", async (req, res): Promise<void> => {
     return;
   }
 
-  let query = db.select().from(racecardsTable).orderBy(desc(racecardsTable.raceDate), racecardsTable.raceTime);
-
   const conditions = [];
   if (params.data.date) {
     conditions.push(eq(racecardsTable.raceDate, params.data.date));
@@ -37,7 +32,7 @@ router.get("/racecards", async (req, res): Promise<void> => {
     ? db.select().from(racecardsTable).where(and(...conditions)).orderBy(desc(racecardsTable.raceDate), racecardsTable.raceTime)
     : db.select().from(racecardsTable).orderBy(desc(racecardsTable.raceDate), racecardsTable.raceTime));
 
-  res.json(racecards.map(r => ListRacecardsResponseItem.parse(r)));
+  res.json(racecards);
 });
 
 router.post("/racecards", async (req, res): Promise<void> => {
@@ -48,7 +43,7 @@ router.post("/racecards", async (req, res): Promise<void> => {
   }
 
   const [racecard] = await db.insert(racecardsTable).values(parsed.data).returning();
-  res.status(201).json(GetRacecardResponse.parse(racecard));
+  res.status(201).json(racecard);
 });
 
 router.get("/racecards/:id", async (req, res): Promise<void> => {
@@ -64,7 +59,7 @@ router.get("/racecards/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(GetRacecardResponse.parse(racecard));
+  res.json(racecard);
 });
 
 router.patch("/racecards/:id", async (req, res): Promise<void> => {
@@ -86,7 +81,7 @@ router.patch("/racecards/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(UpdateRacecardResponse.parse(racecard));
+  res.json(racecard);
 });
 
 router.delete("/racecards/:id", async (req, res): Promise<void> => {
@@ -134,7 +129,6 @@ router.get("/racecards/:id/analysis", async (req, res): Promise<void> => {
   const runners = await db.select().from(runnersTable).where(eq(runnersTable.racecardId, params.data.id));
   const scores = await db.select().from(apexScoresTable).where(eq(apexScoresTable.racecardId, params.data.id));
 
-  // Find top pick based on highest total score
   const topPickScore = scores.reduce<typeof scores[0] | null>((best, s) => {
     return !best || s.totalScore > best.totalScore ? s : best;
   }, null);

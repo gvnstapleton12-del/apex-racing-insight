@@ -7,7 +7,6 @@ import {
   CreateHorseNoteBody,
   UpdateNoteParams,
   UpdateNoteBody,
-  UpdateNoteResponse,
   DeleteNoteParams,
 } from "@workspace/api-zod";
 
@@ -60,7 +59,7 @@ router.patch("/notes/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(UpdateNoteResponse.parse(note));
+  res.json(note);
 });
 
 router.delete("/notes/:id", async (req, res): Promise<void> => {

@@ -5,10 +5,8 @@ import {
   ListHorsesQueryParams,
   CreateHorseBody,
   GetHorseParams,
-  GetHorseResponse,
   UpdateHorseParams,
   UpdateHorseBody,
-  UpdateHorseResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -35,7 +33,7 @@ router.post("/horses", async (req, res): Promise<void> => {
   }
 
   const [horse] = await db.insert(horsesTable).values(parsed.data).returning();
-  res.status(201).json(GetHorseResponse.parse(horse));
+  res.status(201).json(horse);
 });
 
 router.get("/horses/:id", async (req, res): Promise<void> => {
@@ -51,7 +49,7 @@ router.get("/horses/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(GetHorseResponse.parse(horse));
+  res.json(horse);
 });
 
 router.patch("/horses/:id", async (req, res): Promise<void> => {
@@ -73,7 +71,7 @@ router.patch("/horses/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(UpdateHorseResponse.parse(horse));
+  res.json(horse);
 });
 
 export default router;
