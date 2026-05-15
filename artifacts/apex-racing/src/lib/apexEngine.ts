@@ -1,3 +1,11 @@
+export interface HorseMemory {
+  replay?: string;
+  behaviour?: string;
+  tactical?: string;
+  pressure?: string;
+  hiddenValue?: string;
+}
+
 export interface RunnerInput {
   horseName: string;
   draw?: number | null;
@@ -7,6 +15,7 @@ export interface RunnerInput {
   jockey?: string | null;
   trainer?: string | null;
   weight?: string | null;
+  memory?: HorseMemory;
 }
 
 export interface RacecardInput {
@@ -180,6 +189,18 @@ function scoreAbility(runner: RunnerInput, racecard: RacecardInput): ScoreBreakd
     notes.push(`${form.incidents} P/F/U in form`);
   }
 
+  const mem = runner.memory;
+  if (mem?.pressure) {
+    const p = mem.pressure.toLowerCase();
+    if (p.includes("strong") || p.includes("good") || p.includes("battl") || p.includes("tough") || p.includes("respond")) {
+      score += 12; notes.push("memory: strong pressure response");
+    } else if (p.includes("weak") || p.includes("fold") || p.includes("quit") || p.includes("lack")) {
+      score -= 10; notes.push("memory: weak under pressure");
+    } else {
+      score += 4; notes.push("memory: pressure response noted");
+    }
+  }
+
   return { score: clamp(score), note: notes.length ? notes.join(" · ") : "Standard assessment" };
 }
 
@@ -271,6 +292,28 @@ function scoreTacticalResilience(runner: RunnerInput, racecard: RacecardInput): 
 
   if (form.trend === "improving") { score += 6; notes.push("building confidence"); }
   if (form.trend === "declining") { score -= 6; notes.push("losing confidence"); }
+
+  const mem = runner.memory;
+  if (mem?.tactical) {
+    const t = mem.tactical.toLowerCase();
+    if (t.includes("front") || t.includes("leader") || t.includes("prominent")) {
+      score += 8; notes.push("memory: front-running profile");
+    } else if (t.includes("held up") || t.includes("late") || t.includes("closer")) {
+      score += 6; notes.push("memory: patient tactical style");
+    } else if (t.includes("traffic") || t.includes("trouble") || t.includes("bump")) {
+      score -= 8; notes.push("memory: traffic trouble history");
+    } else {
+      score += 5; notes.push("memory: tactical profile recorded");
+    }
+  }
+  if (mem?.behaviour) {
+    const b = mem.behaviour.toLowerCase();
+    if (b.includes("awkward") || b.includes("refuses") || b.includes("rears") || b.includes("unruly")) {
+      score -= 10; notes.push("memory: behavioural concern at start");
+    } else if (b.includes("genuine") || b.includes("settled") || b.includes("relaxed")) {
+      score += 7; notes.push("memory: genuine temperament");
+    }
+  }
 
   return { score: clamp(score), note: notes.length ? notes.join(" · ") : "Standard resilience profile" };
 }
@@ -384,6 +427,20 @@ function scoreReplayIntelligence(runner: RunnerInput, racecard: RacecardInput): 
     notes.push("incidents may mask true ability — replay value");
   }
 
+  const mem = runner.memory;
+  if (mem?.replay) {
+    const r = mem.replay.toLowerCase();
+    if (r.includes("unlucky") || r.includes("blocked") || r.includes("hampered") || r.includes("bumped") || r.includes("checked")) {
+      score += 18; notes.push("memory: replay shows unlucky interference");
+    } else if (r.includes("found") || r.includes("more to give") || r.includes("eased") || r.includes("not pushed")) {
+      score += 14; notes.push("memory: replay shows unexploited potential");
+    } else if (r.includes("flat") || r.includes("no run") || r.includes("poor") || r.includes("didn't stay")) {
+      score -= 10; notes.push("memory: replay showed weakness");
+    } else {
+      score += 8; notes.push("memory: replay notes on file");
+    }
+  }
+
   return { score: clamp(score), note: notes.length ? notes.join(" · ") : "No specific replay signals — baseline 50" };
 }
 
@@ -442,6 +499,22 @@ function scoreHiddenValue(runner: RunnerInput, racecard: RacecardInput): ScoreBr
     score += 6; notes.push("consistent placer yet to win — overdue");
   }
 
+  const mem = runner.memory;
+  if (mem?.hiddenValue) {
+    const h = mem.hiddenValue.toLowerCase();
+    if (h.includes("trainer angle") || h.includes("stable") || h.includes("confidently backed") || h.includes("market move")) {
+      score += 20; notes.push("memory: stable/market angle flagged");
+    } else if (h.includes("equipment") || h.includes("blinkers") || h.includes("tongue tie") || h.includes("visor")) {
+      score += 12; notes.push("memory: equipment change angle");
+    } else if (h.includes("course") || h.includes("distance") || h.includes("specialist") || h.includes("loves")) {
+      score += 15; notes.push("memory: course/distance specialist flagged");
+    } else if (h.includes("overpriced") || h.includes("value") || h.includes("wrong price")) {
+      score += 14; notes.push("memory: market value flag");
+    } else {
+      score += 8; notes.push("memory: hidden value flagged");
+    }
+  }
+
   return { score: clamp(score), note: notes.length ? notes.join(" · ") : "Baseline hidden value assessment" };
 }
 
@@ -498,6 +571,26 @@ function scoreVolatilityRisk(runner: RunnerInput, racecard: RacecardInput): Scor
 
   if (form.hasSeasonBreak && form.total <= 3) {
     score += 8; notes.push("limited seasonal form — unknown current readiness");
+  }
+
+  const mem = runner.memory;
+  if (mem?.behaviour) {
+    const b = mem.behaviour.toLowerCase();
+    if (b.includes("rears") || b.includes("refuses") || b.includes("unruly") || b.includes("violent") || b.includes("savage")) {
+      score += 22; notes.push("memory: serious behavioural concern");
+    } else if (b.includes("awkward") || b.includes("hesitant") || b.includes("slowly away") || b.includes("dwelt")) {
+      score += 12; notes.push("memory: start/gate issue");
+    } else if (b.includes("genuine") || b.includes("reliable") || b.includes("settled") || b.includes("relaxed") || b.includes("professional")) {
+      score -= 12; notes.push("memory: genuine and reliable");
+    }
+  }
+  if (mem?.pressure) {
+    const p = mem.pressure.toLowerCase();
+    if (p.includes("weak") || p.includes("fold") || p.includes("quit") || p.includes("hang") || p.includes("stops")) {
+      score += 14; notes.push("memory: caves under pressure");
+    } else if (p.includes("battles") || p.includes("digs") || p.includes("tough") || p.includes("fight")) {
+      score -= 8; notes.push("memory: battler — low volatility risk");
+    }
   }
 
   return { score: clamp(score), note: notes.length ? notes.join(" · ") : "Standard risk profile" };

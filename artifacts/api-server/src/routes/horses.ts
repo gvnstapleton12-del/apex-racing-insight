@@ -11,6 +11,19 @@ import {
 
 const router: IRouter = Router();
 
+router.post("/horses/find-or-create", async (req, res): Promise<void> => {
+  const { name } = req.body as { name?: string };
+  if (!name || !name.trim()) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  const trimmed = name.trim();
+  const [existing] = await db.select().from(horsesTable).where(eq(horsesTable.name, trimmed)).limit(1);
+  if (existing) { res.json(existing); return; }
+  const [created] = await db.insert(horsesTable).values({ name: trimmed }).returning();
+  res.status(201).json(created);
+});
+
 router.get("/horses", async (req, res): Promise<void> => {
   const params = ListHorsesQueryParams.safeParse(req.query);
   if (!params.success) {
