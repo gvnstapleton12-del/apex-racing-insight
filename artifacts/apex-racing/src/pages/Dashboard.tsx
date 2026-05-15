@@ -59,8 +59,8 @@ const todayStr = new Date().toISOString().slice(0, 10);
 // Day-level governance for the single Bet Of The Day election.
 // Candidates must already be engine-classified as best_of_day (rank-1, low/med volatility).
 // These thresholds then elect at most one horse from that pool.
-const BOD_MIN_SCORE      = 65;   // relative score floor
-const BOD_MIN_FIELD_EDGE = 5;    // must lead field by this many pts
+const BOD_MIN_SCORE      = 68;   // relative score floor — deliberately high
+const BOD_MIN_FIELD_EDGE = 6;    // must clearly lead field by this many pts
 const BOD_ALLOWED_TIERS: VolatilityTier[] = ["low", "medium"];
 
 const TIER_COLOR: Record<VolatilityTier, string> = {

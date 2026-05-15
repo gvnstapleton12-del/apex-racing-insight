@@ -670,14 +670,25 @@ export function computeRaceVolatility(racecard: RacecardInput): RaceVolatilityRe
   const isJump       = name.includes("chase") || name.includes("hurdle") || name.includes("national hunt");
   const isGroup      = name.includes("group") || name.includes("listed") || name.includes("grade");
   const isConditions = name.includes("conditions") || name.includes("stakes") || isGroup;
+  const isSprint     = furlongs !== null && furlongs <= 7;
 
   if (isGroup)               { score -= 10; factors.push("Group/Listed — high-quality, reliable form"); }
   else if (isConditions)     { score -= 4; }
-  else if (isSelling)        { score += 18; factors.push("Selling/Claiming — unpredictable"); }
+  else if (isSelling)        { score += 20; factors.push("Selling/Claiming — unpredictable"); }
   else if (isMaiden)         { score += 14; factors.push("Maiden/Novice — inexperienced field"); }
-  else if (isHandicap && fieldSize >= 14) { score += 24; factors.push("Large-field handicap — maximum chaos"); }
-  else if (isHandicap)       { score += 10; factors.push("Handicap race"); }
+  else if (isHandicap && fieldSize >= 14) { score += 26; factors.push("Large-field handicap — maximum chaos"); }
+  else if (isHandicap)       { score += 12; factors.push("Handicap race"); }
   if (isJump)                { score += 14; factors.push("Jump race — incident risk"); }
+
+  // Chaos multipliers: dangerous type combinations that frequently produce chaotic outcomes
+  if (isSprint && isHandicap && fieldSize >= 10) {
+    score += 18; factors.push("Sprint handicap ≥10 runners — draw lottery, pace chaos compound");
+  } else if (isSprint && isHandicap) {
+    score += 8; factors.push("Sprint handicap — draw factor elevated");
+  }
+  if (isMaiden && fieldSize >= 10) {
+    score += 10; factors.push("Inexperienced field ≥10 — form reliability low");
+  }
 
   // Going
   if (going.includes("heavy"))                                             { score += 22; factors.push("Heavy going — stamina lottery"); }
@@ -689,16 +700,17 @@ export function computeRaceVolatility(racecard: RacecardInput): RaceVolatilityRe
 
   // Track profile signals
   if (profile.includes("pace collapse") || profile.includes("false pace")) { score += 28; factors.push("Track: pace collapse / false pace flagged"); }
-  else if (profile.includes("slow pace") || profile.includes("slow early")) { score += 18; factors.push("Track: slow pace expected"); }
-  else if (profile.includes("pace duel") || profile.includes("two pace"))   { score += 16; factors.push("Track: pace duel / multiple pace setters"); }
+  else if (profile.includes("slow pace") || profile.includes("slow early")) { score += 20; factors.push("Track: slow pace expected"); }
+  else if (profile.includes("pace duel") || profile.includes("two pace"))   { score += 18; factors.push("Track: pace duel / multiple pace setters"); }
   else if (profile.includes("strong pace") || profile.includes("fast pace")) { score += 4; }
-  else if (profile.includes("rail bias") || profile.includes("draw bias"))   { score += 12; factors.push("Track: draw/rail bias noted"); }
+  else if (profile.includes("rail bias") || profile.includes("draw bias"))   { score += 14; factors.push("Track: draw/rail bias noted"); }
 
-  // Draw chaos amplified in sprints
-  if (furlongs !== null && furlongs <= 7) {
-    if (fieldSize >= 16)      { score += 25; factors.push("Sprint + large field — draw chaos maximum"); }
-    else if (fieldSize >= 12) { score += 15; factors.push("Sprint + sizeable field — draw bias"); }
-    else                      { score += 6;  factors.push("Sprint — draw factor"); }
+  // Draw chaos amplified in sprints (base component — combination above adds more for handicaps)
+  if (isSprint) {
+    if (fieldSize >= 16)      { score += 26; factors.push("Sprint + large field — draw chaos maximum"); }
+    else if (fieldSize >= 12) { score += 16; factors.push("Sprint + sizeable field — draw bias significant"); }
+    else if (fieldSize >= 8)  { score += 8;  factors.push("Sprint ≥8 runners — draw factor"); }
+    else                      { score += 4;  factors.push("Sprint — draw factor"); }
   }
 
   // Staying trips
@@ -713,8 +725,8 @@ export function computeRaceVolatility(racecard: RacecardInput): RaceVolatilityRe
 
   // Race class
   if (cls !== null) {
-    if (cls >= 5)  { score += 10; factors.push(`Class ${cls} — lower grade, open form book`); }
-    else if (cls <= 2) { score -= 6; factors.push(`Class ${cls} — elite, predictable form lines`); }
+    if (cls >= 5)      { score += 10; factors.push(`Class ${cls} — lower grade, open form book`); }
+    else if (cls <= 2) { score -= 6;  factors.push(`Class ${cls} — elite, predictable form lines`); }
   }
 
   // Market context
@@ -729,28 +741,31 @@ export function computeRaceVolatility(racecard: RacecardInput): RaceVolatilityRe
   let blockedClasses: string[];
   let governanceNote: string;
 
-  // Thresholds calibrated so large-field sprint handicaps on soft = extreme,
-  // Group 1 fields on good = low.
-  if (finalScore >= 60) {
+  // Tier thresholds — calibrated so that:
+  //   Group/Listed on good ground with small field → low
+  //   Standard conditions handicap ≤8 runners     → medium
+  //   10+ runner handicap / sprint + handicap      → high
+  //   Large-field sprint handicap / heavy going    → extreme
+  if (finalScore >= 52) {
     tier = "extreme";
     label = "Extreme Volatility";
     blockedClasses = ["best_of_day", "top_rated_high_variance"];
     governanceNote = `Race environment score ${finalScore}/100 — highly unpredictable. Best Of Day and Top Rated blocked. Only Each Way Value or No Bet permitted.`;
-  } else if (finalScore >= 38) {
+  } else if (finalScore >= 30) {
     tier = "high";
     label = "High Volatility";
     blockedClasses = ["best_of_day"];
     governanceNote = `Race environment score ${finalScore}/100 — chaotic conditions. Best Of Day blocked. Top Rated / High Variance is the maximum available classification.`;
-  } else if (finalScore >= 20) {
+  } else if (finalScore >= 15) {
     tier = "medium";
     label = "Medium Volatility";
     blockedClasses = [];
-    governanceNote = `Race environment score ${finalScore}/100 — moderate unpredictability. Best Of Day requires a relative score of 76+.`;
+    governanceNote = `Race environment score ${finalScore}/100 — moderate unpredictability. Best Of Day requires a relative score of 79+.`;
   } else {
     tier = "low";
     label = "Low Volatility";
     blockedClasses = [];
-    governanceNote = `Race environment score ${finalScore}/100 — stable conditions. All classifications available.`;
+    governanceNote = `Race environment score ${finalScore}/100 — stable, controlled conditions. All classifications available.`;
   }
 
   return { score: finalScore, tier, label, factors, blockedClasses, governanceNote };
@@ -771,40 +786,45 @@ function classifyScore(
   const blocked = raceVolatility.blockedClasses;
   const allow = (cls: string) => !blocked.includes(cls);
 
-  // ── BEST OF THE DAY — strictest tier ──────────────────────────────────────
-  // Only the field leader can qualify; race must be low or medium volatility.
-  // Runner must also be individually controlled (low personal volatility).
+  // ── BEST OF THE DAY — most selective tier ─────────────────────────────────
+  // Prerequisites: rank-1 in the field, race is low or medium volatility only,
+  // runner must have low personal volatility (reliable, consistent individual).
+  // Thresholds are deliberately tight — the typical BOD pool should be 0-3 horses.
   if (isFieldLeader) {
-    // Low volatility race: score ≥ 70, runner volatility ≤ 40
-    if (raceVolatility.tier === "low" && relativeScore >= 70 && runnerVolatility <= 40 && allow("best_of_day")) {
-      return { cls: "best_of_day", note: `Field leader — relative score ${Math.round(relativeScore)} in stable conditions — highest confidence selection` };
+    // Low volatility: clearest path — score ≥ 73, controlled runner (vol ≤ 35)
+    if (raceVolatility.tier === "low" && relativeScore >= 73 && runnerVolatility <= 35 && allow("best_of_day")) {
+      return { cls: "best_of_day", note: `Field leader — score ${Math.round(relativeScore)}, stable race environment, controlled volatility — highest confidence` };
     }
-    // Medium volatility race: harder threshold (score ≥ 76, runner volatility ≤ 36)
-    if (raceVolatility.tier === "medium" && relativeScore >= 76 && runnerVolatility <= 36 && allow("best_of_day")) {
-      return { cls: "best_of_day", note: `Field leader — relative score ${Math.round(relativeScore)} — qualifies despite medium volatility environment` };
+    // Medium volatility: stricter threshold — score ≥ 79, very controlled runner (vol ≤ 30)
+    if (raceVolatility.tier === "medium" && relativeScore >= 79 && runnerVolatility <= 30 && allow("best_of_day")) {
+      return { cls: "best_of_day", note: `Field leader — score ${Math.round(relativeScore)}, qualifies despite medium volatility — controlled runner in manageable environment` };
     }
-    // BOD threshold met but blocked by race governance → downgrade to Top Rated
-    if (relativeScore >= 70 && !allow("best_of_day") && allow("top_rated_high_variance")) {
-      return { cls: "top_rated_high_variance", note: `Score ${Math.round(relativeScore)} qualifies but ${raceVolatility.label} blocks Best Of Day — capped at Top Rated` };
+    // Would qualify but race governance blocks BOD → downgrade to Top Rated
+    if (relativeScore >= 73 && !allow("best_of_day") && allow("top_rated_high_variance")) {
+      return { cls: "top_rated_high_variance", note: `Score ${Math.round(relativeScore)} meets Best Of Day threshold — ${raceVolatility.label} environment blocks classification, capped at Top Rated` };
     }
   }
 
   // ── TOP RATED / HIGH VARIANCE ─────────────────────────────────────────────
-  // Capable horse in a volatile environment, or non-leader with a strong score.
-  if (relativeScore >= 63 && allow("top_rated_high_variance")) {
-    const context = isFieldLeader ? "field leader" : "strong contender";
-    return { cls: "top_rated_high_variance", note: `${context.charAt(0).toUpperCase() + context.slice(1)} — relative score ${Math.round(relativeScore)}, ${raceVolatility.label}` };
+  // Strong horse in a volatile race, or non-leader with an exceptional score.
+  // Race governance may force strong horses here; volatile runners land here.
+  if (relativeScore >= 66 && allow("top_rated_high_variance")) {
+    const ctx = isFieldLeader ? "Field leader" : "Strong contender";
+    return { cls: "top_rated_high_variance", note: `${ctx} — score ${Math.round(relativeScore)}, ${raceVolatility.label}` };
   }
 
   // ── EACH WAY VALUE ────────────────────────────────────────────────────────
-  // Moderate overall score + elevated hidden value component + EW odds
+  // Requires: moderate composite score + elevated hidden value profile + EW odds.
+  // The score floor sits below Top Rated (66) to catch capable horses that miss
+  // the Top Rated bar but still carry genuine each-way potential.
+  // Not available in extreme volatility races (too unpredictable to recommend EW).
   if (
     relativeScore >= 54 &&
-    hiddenComponent >= 60 &&
+    hiddenComponent >= 61 &&
     (oddsDecimal === null || oddsDecimal >= 3.0) &&
     raceVolatility.tier !== "extreme"
   ) {
-    return { cls: "each_way_value", note: `Each-way potential — score ${Math.round(relativeScore)}, elevated hidden value (${hiddenComponent}), odds suitable` };
+    return { cls: "each_way_value", note: `Each-way potential — score ${Math.round(relativeScore)}, elevated hidden value profile (${hiddenComponent}), odds suitable` };
   }
 
   // ── NO BET ────────────────────────────────────────────────────────────────
@@ -885,14 +905,39 @@ export function runApexEngineForField(
   raw.sort((a, b) => b.totalScore - a.totalScore);
 
   // Step 3 — field-relative adjustment
-  // relativeScore = rawScore + (rawScore − fieldMean) × 0.18
-  // Horses clearly above the field gain a modest boost; below lose a modest penalty.
-  // This rewards field dominance without distorting the absolute scale much.
+  //
+  // Two-component separation mechanism to ensure the strongest horse in each
+  // race clearly stands above the rest:
+  //
+  // A. Mean-deviation amplifier (0.40×): horses above field mean gain a boost,
+  //    those below take a penalty. Higher multiplier = wider score spread.
+  //
+  // B. Rank bonus/penalty (fixed per tier): rewards the clear leader,
+  //    penalises the mid-pack and tail to prevent clustering.
+  //    rank 1: +3.0   (leader bonus)
+  //    rank 2: +1.0   (second place — modest lift)
+  //    rank 3: −1.5   (mid-pack — slight penalty)
+  //    rank 4+: −3.0  (tail — meaningful penalty)
+  //
+  // These two components together create 5–12 pt separation between rank-1
+  // and rank-2, making field leaders clearly distinguishable.
+
   const fieldMean = raw.reduce((s, e) => s + e.totalScore, 0) / raw.length;
 
+  function rankBonus(rank: number): number {
+    if (rank === 1) return 3.0;
+    if (rank === 2) return 1.0;
+    if (rank === 3) return -1.5;
+    return -3.0;
+  }
+
   const withRelative = raw.map((e, idx) => {
-    const relativeScore = clampF(e.totalScore + (e.totalScore - fieldMean) * 0.18, 0, 100);
-    return { ...e, fieldRank: idx + 1, relativeScore };
+    const fieldRank = idx + 1;
+    const relativeScore = clampF(
+      e.totalScore + (e.totalScore - fieldMean) * 0.40 + rankBonus(fieldRank),
+      0, 100
+    );
+    return { ...e, fieldRank, relativeScore };
   });
 
   // Step 4 — classify with rank awareness
