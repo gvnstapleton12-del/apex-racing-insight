@@ -1,16 +1,16 @@
-import { Router, type IRouter } from "express";
-import healthRouter from "./health";
-import racecardsRouter from "./racecards";
-import runnersRouter from "./runners";
-import horsesRouter from "./horses";
-import notesRouter from "./notes";
-import scoresRouter from "./scores";
-import calibrationRouter from "./calibration";
-import dashboardRouter from "./dashboard";
-import uploadRouter from "./upload";
-import fetchRouter from "./fetch";
+import { Router } from "express";
+import healthRouter from "./health.js";
+import racecardsRouter from "./racecards.js";
+import runnersRouter from "./runners.js";
+import horsesRouter from "./horses.js";
+import notesRouter from "./notes.js";
+import scoresRouter from "./scores.js";
+import calibrationRouter from "./calibration.js";
+import dashboardRouter from "./dashboard.js";
+import uploadRouter from "./upload.js";
+import fetchRouter from "./fetch.js";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.use(healthRouter);
 router.use(racecardsRouter);
