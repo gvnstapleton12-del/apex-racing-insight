@@ -1,15 +1,14 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "artifacts/api-server/src/index.ts",
-      "use": "@vercel/node"
+  "functions": {
+    "artifacts/api-server/src/index.ts": {
+      "runtime": "@vercel/node"
     }
-  ],
-  "routes": [
+  },
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "artifacts/api-server/src/index.ts"
+      "source": "/api/(.*)",
+      "destination": "/artifacts/api-server/src/index.ts"
     }
   ]
 }
